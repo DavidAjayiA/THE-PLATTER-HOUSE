@@ -1,4 +1,4 @@
-# 👑 The Platter House — Catering & Food Delivery System
+#  The Platter House — Catering & Food Delivery System
 
 > A luxury catering storefront and real-time merchant operations portal built for high-end finger foods, small chops, party platters, and event catering in Lagos, Nigeria.
 

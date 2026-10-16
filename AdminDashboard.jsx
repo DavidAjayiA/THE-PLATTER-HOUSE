@@ -1,0 +1,1750 @@
+import { useState, useEffect, useMemo } from "react";
+import { STORE_NAME, BUSINESS_EMAIL, BUSINESS_WHATSAPP_PHONE, ADMIN_PIN } from "./config.js";
+import brandLogo from "./IMG/the_platter_house_hq.jpg";
+
+const FONT_IMPORT = `
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Work+Sans:wght@400;500;600;700&display=swap');
+  .font-display { font-family: 'Fraunces', serif; font-optical-sizing: auto; }
+  .font-body { font-family: 'Work Sans', sans-serif; }
+`;
+
+// Default seed orders to display if no orders exist yet
+const INITIAL_SEED_ORDERS = [
+  {
+    orderNumber: "TPH-10482",
+    placedOn: "12 Oct 2026, 10:45 AM",
+    customerName: "David Ajayi",
+    phone: "0803 123 4567",
+    email: "david@gmail.com",
+    fulfillment: "Delivery",
+    address: "21 Admiralty Way, Lekki Phase 1, Lagos, Nigeria",
+    preferredDate: "Today, 1:30 PM",
+    notes: "Please pack pepper sauce in separate small cups.",
+    subtotal: 42000,
+    deliveryFee: 5000,
+    total: 47000,
+    status: "Confirmed",
+    paymentStatus: "Paid",
+    isPaid: true,
+    paymentMethod: "Paystack (Online)",
+    paymentReference: "TPH_10482_948271",
+    currentStageIndex: 0, // 0: Confirmed, 1: Preparing, 2: Out for Delivery, 3: Delivered
+    items: [
+      { name: "Small Chops Platter (50pc)", qty: 1, price: 30000 },
+      { name: "Meat Pie Box (24pc)", qty: 1, price: 12000 },
+    ],
+  },
+  {
+    orderNumber: "TPH-10481",
+    placedOn: "12 Oct 2026, 09:15 AM",
+    customerName: "Tosin Adebanjo",
+    phone: "0814 555 8921",
+    email: "tosin.a@outlook.com",
+    fulfillment: "Delivery",
+    address: "Bourdillon Road, Ikoyi, Lagos",
+    preferredDate: "Today, 3:00 PM",
+    notes: "Executive boardroom meeting delivery.",
+    subtotal: 60000,
+    deliveryFee: 5000,
+    total: 65000,
+    status: "Preparing",
+    paymentStatus: "Paid",
+    isPaid: true,
+    paymentMethod: "Paystack (Online)",
+    paymentReference: "TPH_10481_881920",
+    currentStageIndex: 1,
+    items: [
+      { name: "Chicken Skewer Platter (30pc)", qty: 2, price: 25000 },
+      { name: "Puff-Puff & Chin Chin Mix", qty: 2, price: 5000 },
+    ],
+  },
+  {
+    orderNumber: "TPH-10480",
+    placedOn: "11 Oct 2026, 04:30 PM",
+    customerName: "Blessing Okonjo",
+    phone: "0902 444 3311",
+    email: "blessing.okonjo@gmail.com",
+    fulfillment: "Delivery",
+    address: "Chevron Drive, Lekki, Lagos",
+    preferredDate: "Tomorrow, 12:00 PM",
+    notes: "Birthday party platters.",
+    subtotal: 115000,
+    deliveryFee: 5000,
+    total: 120000,
+    status: "Preparing",
+    paymentStatus: "Paid",
+    isPaid: true,
+    paymentMethod: "Paystack (Online)",
+    paymentReference: "TPH_10480_771822",
+    currentStageIndex: 1,
+    items: [
+      { name: "Assorted Small Chops (100pc)", qty: 2, price: 50000 },
+      { name: "Birthday Cake, 2-Tier", qty: 1, price: 15000 },
+    ],
+  },
+  {
+    orderNumber: "TPH-10479",
+    placedOn: "11 Oct 2026, 02:00 PM",
+    customerName: "Victoria Igwe",
+    phone: "0706 888 1234",
+    email: "victoria@company.ng",
+    fulfillment: "Pickup",
+    address: "Lekki Phase 1 Hub (Self Pickup)",
+    preferredDate: "Tomorrow, 11:00 AM",
+    notes: "",
+    subtotal: 35000,
+    deliveryFee: 0,
+    total: 35000,
+    status: "Pending Payment",
+    paymentStatus: "Unpaid",
+    isPaid: false,
+    paymentMethod: "Pending",
+    paymentReference: "None",
+    currentStageIndex: 0,
+    items: [
+      { name: "Meat Pie Box (24pc)", qty: 2, price: 12000 },
+      { name: "Spring Roll & Samosa Mix (40pc)", qty: 1, price: 11000 },
+    ],
+  },
+  {
+    orderNumber: "TPH-10478",
+    placedOn: "10 Oct 2026, 01:10 PM",
+    customerName: "Michael Ekanem",
+    phone: "0805 222 9988",
+    email: "michael.e@gmail.com",
+    fulfillment: "Delivery",
+    address: "GRA Ikeja, Lagos",
+    preferredDate: "10 Oct, 3:30 PM",
+    notes: "Gated estate, security pass requested at gate.",
+    subtotal: 55000,
+    deliveryFee: 5000,
+    total: 60000,
+    status: "Delivered",
+    paymentStatus: "Paid",
+    isPaid: true,
+    paymentMethod: "Paystack (Online)",
+    paymentReference: "TPH_10478_554411",
+    currentStageIndex: 3,
+    items: [
+      { name: "Small Chops Platter (50pc)", qty: 1, price: 30000 },
+      { name: "Jollof Rice Party Tray", qty: 1, price: 25000 },
+    ],
+  },
+];
+
+const INITIAL_NOTIFICATIONS = [
+  {
+    id: 1,
+    title: "New Paid Order Received! 🎉",
+    desc: "Order #TPH-10482 (₦47,000) from David Ajayi has been paid via Paystack.",
+    time: "10 minutes ago",
+    unread: true,
+    orderNumber: "TPH-10482",
+  },
+  {
+    id: 2,
+    title: "Order Moved to Out for Delivery",
+    desc: "Rider dispatched for Order #TPH-10478 to GRA Ikeja.",
+    time: "2 hours ago",
+    unread: false,
+    orderNumber: "TPH-10478",
+  },
+  {
+    id: 3,
+    title: "Online Payment Confirmed",
+    desc: "Paystack confirmed payment of ₦65,000 for Order #TPH-10481.",
+    time: "3 hours ago",
+    unread: false,
+    orderNumber: "TPH-10481",
+  },
+];
+
+function formatNaira(amount) {
+  return `₦${(amount || 0).toLocaleString("en-NG")}`;
+}
+
+export default function AdminDashboard() {
+  const [activeTab, setActiveTab] = useState("all"); // "all" | "pending" | "confirmed" | "preparing" | "out_for_delivery" | "delivered"
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [orders, setOrders] = useState([]);
+  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [sidebarTab, setSidebarTab] = useState("orders"); // "dashboard" | "orders" | "products" | "customers" | "payments" | "analytics" | "settings"
+  const [toastMessage, setToastMessage] = useState(null);
+  const [editingOrder, setEditingOrder] = useState(null); // When not null, opens Edit Order modal
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptMode, setReceiptMode] = useState("customer"); // "customer" | "kitchen"
+  const [dispenseKey, setDispenseKey] = useState(0); // Incremented to re-trigger paper roll animation
+
+  // Vendor Security PIN Gate State
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    try {
+      return sessionStorage.getItem("tph_admin_authed") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+
+  // Check PIN automatically whenever candidate length matches expected PIN
+  function checkPinCode(candidatePin) {
+    const expectedPin = (ADMIN_PIN || "1234").trim();
+    setIsVerifying(true);
+    setPinError(false);
+
+    setTimeout(() => {
+      if (candidatePin === expectedPin) {
+        setIsAuthenticated(true);
+        setIsVerifying(false);
+        setPinInput("");
+        setPinError(false);
+        try {
+          sessionStorage.setItem("tph_admin_authed", "true");
+        } catch {}
+        showToast("Welcome back! Vendor portal unlocked successfully.");
+      } else {
+        setIsVerifying(false);
+        setPinError(true);
+        setPinInput("");
+      }
+    }, 550); // Subtle loading circle feedback before entering
+  }
+
+  function handleDigitPress(digit) {
+    if (isVerifying) return;
+    const expectedLength = (ADMIN_PIN || "1234").trim().length || 4;
+    if (pinInput.length >= expectedLength) return;
+
+    const nextPin = pinInput + digit;
+    setPinInput(nextPin);
+    setPinError(false);
+
+    if (nextPin.length === expectedLength) {
+      checkPinCode(nextPin);
+    }
+  }
+
+  function handleBackspace() {
+    if (isVerifying) return;
+    setPinInput((prev) => prev.slice(0, -1));
+    setPinError(false);
+  }
+
+  function handleClearPin() {
+    if (isVerifying) return;
+    setPinInput("");
+    setPinError(false);
+  }
+
+  function handleLockPortal() {
+    setIsAuthenticated(false);
+    try {
+      sessionStorage.removeItem("tph_admin_authed");
+    } catch {}
+    setPinInput("");
+    setPinError(false);
+    setIsVerifying(false);
+    showToast("Logged out of vendor portal");
+  }
+
+  // Global Keyboard Listener for Laptop / Desktop Physical Keyboard
+  useEffect(() => {
+    if (isAuthenticated) return;
+
+    function handleGlobalKeyDown(e) {
+      if (isVerifying) return;
+
+      // Listen for numbers 0-9 (number row and numpad)
+      if (e.key >= "0" && e.key <= "9") {
+        e.preventDefault();
+        handleDigitPress(e.key);
+      } else if (e.key === "Backspace") {
+        e.preventDefault();
+        handleBackspace();
+      } else if (e.key === "Escape" || e.key === "Delete") {
+        e.preventDefault();
+        handleClearPin();
+      }
+    }
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isAuthenticated, isVerifying, pinInput]);
+
+  // Auto-lock when vendor leaves the dashboard (e.g. checking live shop, tracking, etc.)
+  useEffect(() => {
+    return () => {
+      try {
+        sessionStorage.removeItem("tph_admin_authed");
+      } catch {}
+    };
+  }, []);
+
+  // Load orders from localStorage or seed
+  useEffect(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem("tph_orders") || "[]");
+      if (stored.length > 0) {
+        // Merge stored with seed orders (deduplicating by orderNumber)
+        const combined = [...stored];
+        INITIAL_SEED_ORDERS.forEach((seed) => {
+          if (!combined.some((o) => o.orderNumber === seed.orderNumber)) {
+            combined.push(seed);
+          }
+        });
+        setOrders(combined);
+        setSelectedOrder(combined[0]);
+      } else {
+        setOrders(INITIAL_SEED_ORDERS);
+        setSelectedOrder(INITIAL_SEED_ORDERS[0]);
+        localStorage.setItem("tph_orders", JSON.stringify(INITIAL_SEED_ORDERS));
+      }
+    } catch {
+      setOrders(INITIAL_SEED_ORDERS);
+      setSelectedOrder(INITIAL_SEED_ORDERS[0]);
+    }
+  }, []);
+
+  function showToast(msg) {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 2500);
+  }
+
+  // Update order status and synchronize to localStorage
+  function updateStatus(orderNumber, newStageIndex, newStatusLabel) {
+    const updated = orders.map((o) => {
+      if (o.orderNumber === orderNumber) {
+        return {
+          ...o,
+          currentStageIndex: newStageIndex,
+          status: newStatusLabel,
+        };
+      }
+      return o;
+    });
+
+    setOrders(updated);
+    const orderObj = updated.find((o) => o.orderNumber === orderNumber);
+    setSelectedOrder(orderObj);
+
+    try {
+      localStorage.setItem("tph_orders", JSON.stringify(updated));
+      const localLast = JSON.parse(localStorage.getItem("tph_last_order") || "null");
+      if (localLast && localLast.orderNumber === orderNumber) {
+        localStorage.setItem("tph_last_order", JSON.stringify(orderObj));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Add notification
+    const newNotif = {
+      id: Date.now(),
+      title: `Order #${orderNumber} Updated`,
+      desc: `Status changed to "${newStatusLabel}". Customer tracking updated.`,
+      time: "Just now",
+      unread: true,
+      orderNumber,
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
+    showToast(`Order #${orderNumber} marked as ${newStatusLabel}`);
+  }
+
+  // Verify & Approve Manual GTBank Bank Transfer
+  function verifyTransferPayment(orderNumber) {
+    const verifiedTimestamp = new Date().toLocaleDateString("en-GB", {
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    const updated = orders.map((o) => {
+      if (o.orderNumber === orderNumber) {
+        return {
+          ...o,
+          isPaid: true,
+          paymentStatus: "Paid",
+          status: "Confirmed",
+          currentStageIndex: 1, // Advance tracking to Stage 1: Order Confirmed
+          paidAt: verifiedTimestamp,
+          verifiedByVendor: true,
+        };
+      }
+      return o;
+    });
+
+    setOrders(updated);
+    const orderObj = updated.find((o) => o.orderNumber === orderNumber);
+    setSelectedOrder(orderObj);
+
+    try {
+       // Sync into localStorage for the customer's #track page
+      localStorage.setItem("tph_orders", JSON.stringify(updated));
+      // Add Live Notification to vendor stream
+      const localLast = JSON.parse(localStorage.getItem("tph_last_order") || "null");
+      if (localLast && localLast.orderNumber === orderNumber) {
+        localStorage.setItem("tph_last_order", JSON.stringify(orderObj));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    // Add Live Notification to vendor stream
+    const newNotif = {
+      id: Date.now(),
+      title: `Transfer Verified for #${orderNumber} 🎉`,
+      desc: `Vendor confirmed GTBank transfer of ${formatNaira(orderObj.total)} from ${orderObj.customerName}.`,
+      time: "Just now",
+      unread: true,
+      orderNumber,
+    };
+    setNotifications((prev) => [newNotif, ...prev]);
+    showToast(`✓ Payment Verified: Order #${orderNumber} marked as Paid & Confirmed`);
+  }
+
+  // Delete an Order with safety confirmation
+  function deleteOrder(orderNumber) {
+    if (!window.confirm(`Are you sure you want to delete Order #${orderNumber}? This will permanently remove it from your records.`)) {
+      return;
+    }
+
+    const updated = orders.filter((o) => o.orderNumber !== orderNumber);
+    setOrders(updated);
+
+    try {
+      localStorage.setItem("tph_orders", JSON.stringify(updated));
+      const localLast = JSON.parse(localStorage.getItem("tph_last_order") || "null");
+      if (localLast && localLast.orderNumber === orderNumber) {
+        localStorage.removeItem("tph_last_order");
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    if (selectedOrder?.orderNumber === orderNumber) {
+      setSelectedOrder(updated[0] || null);
+    }
+
+    showToast(`Order #${orderNumber} deleted successfully`);
+  }
+
+  // Save modifications to an existing order
+  function handleSaveOrderEdit(e) {
+    e.preventDefault();
+    if (!editingOrder) return;
+
+    const updated = orders.map((o) => {
+      if (o.orderNumber === editingOrder.orderNumber) {
+        return {
+          ...o,
+          customerName: (editingOrder.customerName || "").trim(),
+          phone: (editingOrder.phone || "").trim(),
+          email: (editingOrder.email || "").trim(),
+          address: (editingOrder.address || "").trim(),
+          preferredDate: (editingOrder.preferredDate || "").trim(),
+          notes: (editingOrder.notes || "").trim(),
+        };
+      }
+      return o;
+    });
+
+    setOrders(updated);
+    const updatedObj = updated.find((o) => o.orderNumber === editingOrder.orderNumber);
+    setSelectedOrder(updatedObj);
+
+    try {
+      localStorage.setItem("tph_orders", JSON.stringify(updated));
+      const localLast = JSON.parse(localStorage.getItem("tph_last_order") || "null");
+      if (localLast && localLast.orderNumber === editingOrder.orderNumber) {
+        localStorage.setItem("tph_last_order", JSON.stringify(updatedObj));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    setEditingOrder(null);
+    showToast(`Order #${updatedObj.orderNumber} details updated successfully`);
+  }
+
+  function markAllNotificationsRead() {
+    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })));
+    showToast("All notifications marked as read");
+  }
+
+  // Filtered orders calculation
+  const filteredOrders = useMemo(() => {
+    return orders.filter((o) => {
+      // Tab filter
+      const statusLower = (o.status || "").toLowerCase();
+      if (activeTab === "pending" && !statusLower.includes("pending")) return false;
+      if (activeTab === "confirmed" && !statusLower.includes("confirmed")) return false;
+      if (activeTab === "preparing" && !statusLower.includes("preparing")) return false;
+      if (activeTab === "out_for_delivery" && !statusLower.includes("out")) return false;
+      if (activeTab === "delivered" && !statusLower.includes("delivered")) return false;
+
+      // Search filter
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchesNumber = (o.orderNumber || "").toLowerCase().includes(query);
+        const matchesName = (o.customerName || "").toLowerCase().includes(query);
+        const matchesPhone = (o.phone || "").toLowerCase().includes(query);
+        return matchesNumber || matchesName || matchesPhone;
+      }
+      return true;
+    });
+  }, [orders, activeTab, searchQuery]);
+
+  // Tab counts
+  const counts = useMemo(() => {
+    return {
+      all: orders.length,
+      pending: orders.filter((o) => (o.status || "").toLowerCase().includes("pending")).length,
+      confirmed: orders.filter((o) => (o.status || "").toLowerCase().includes("confirmed")).length,
+      preparing: orders.filter((o) => (o.status || "").toLowerCase().includes("preparing")).length,
+      out_for_delivery: orders.filter((o) => (o.status || "").toLowerCase().includes("out")).length,
+      delivered: orders.filter((o) => (o.status || "").toLowerCase().includes("delivered")).length,
+    };
+  }, [orders]);
+
+  // Total revenue
+  const totalRevenue = useMemo(() => {
+    return orders
+      .filter((o) => o.isPaid || (o.paymentStatus || "").toLowerCase() === "paid")
+      .reduce((sum, o) => sum + (o.total || 0), 0);
+  }, [orders]);
+
+  // ---------------------------------------------------------------------------
+  // RENDER: VENDOR SECURITY PIN GATE
+  // ---------------------------------------------------------------------------
+  if (!isAuthenticated) {
+    const expectedLength = (ADMIN_PIN || "1234").trim().length || 4;
+
+    return (
+      <div
+        className="font-body min-h-screen flex items-center justify-center p-4 relative"
+        style={{ backgroundColor: "#201D1B", color: "#F6F2EB" }}
+      >
+        <style>{FONT_IMPORT}</style>
+
+        {/* Top Green Notification Toast */}
+        {toastMessage && (
+          <div
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-5 py-2.5 rounded-full text-xs font-semibold shadow-2xl transition-all border pointer-events-none"
+            style={{ backgroundColor: "#1B5E20", color: "#FFFFFF", borderColor: "#4CAF50" }}
+          >
+            <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">✓</span>
+            <span className="tracking-wide">{toastMessage}</span>
+          </div>
+        )}
+
+        <div className="max-w-xs sm:max-w-sm w-full bg-[#2B1B1E] p-8 rounded-sm border border-[#A9824F]/30 shadow-2xl text-center">
+          {/* Brand Logo with Padlock Security Accent */}
+          <div className="relative w-20 h-20 mx-auto mb-4">
+            <img
+              src={brandLogo}
+              alt={STORE_NAME}
+              className="w-full h-full object-contain rounded-full bg-white p-1.5 shadow-md border-2 border-[#A9824F]"
+            />
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#6E1E2B] border border-[#A9824F] text-white flex items-center justify-center shadow">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+              </svg>
+            </div>
+          </div>
+
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#A9824F] mb-1">
+            Vendor Portal Access
+          </p>
+          <h1 className="font-display text-2xl font-semibold text-white mb-1">
+            {STORE_NAME}
+          </h1>
+          <p className="text-xs text-[#E4DED2]/70 mb-5">
+            Enter 4-digit security PIN to unlock the dashboard.
+          </p>
+
+          {/* Hidden input to capture physical keyboard focus */}
+          <input
+            type="password"
+            maxLength={expectedLength}
+            value={pinInput}
+            onChange={(e) => {
+              const val = e.target.value.replace(/[^0-9]/g, "");
+              if (val.length <= expectedLength) {
+                setPinInput(val);
+                setPinError(false);
+                if (val.length === expectedLength) {
+                  checkPinCode(val);
+                }
+              }
+            }}
+            disabled={isVerifying}
+            className="sr-only"
+            autoFocus
+          />
+
+          {/* 4 Interactive PIN Dots */}
+          <div className="flex justify-center items-center gap-3.5 my-4">
+            {Array.from({ length: expectedLength }).map((_, idx) => {
+              const isFilled = pinInput.length > idx;
+              return (
+                <div
+                  key={idx}
+                  className={`w-4 h-4 rounded-full transition-all duration-200 border ${
+                    pinError
+                      ? "border-red-500 bg-red-500/80 animate-pulse"
+                      : isFilled
+                      ? "bg-[#A9824F] border-[#A9824F] scale-110 shadow-sm"
+                      : "border-white/30 bg-white/5"
+                  }`}
+                />
+              );
+            })}
+          </div>
+
+          {/* Status Message / Loading Circle Feedback */}
+          <div className="min-h-[28px] flex items-center justify-center">
+            {isVerifying ? (
+              <div className="flex items-center justify-center gap-2 text-xs text-[#A9824F] font-medium">
+                <svg className="animate-spin h-4 w-4 text-[#A9824F]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span>Verifying PIN...</span>
+              </div>
+            ) : pinError ? (
+              <p className="text-xs text-red-400 font-medium">
+                Incorrect PIN. Please try again.
+              </p>
+            ) : (
+              <p className="text-[11px] text-[#E4DED2]/40">
+                {pinInput.length === 0 ? "Type or tap your 4 digits" : `${pinInput.length} of ${expectedLength} entered`}
+              </p>
+            )}
+          </div>
+
+          {/* Touch Numpad (Clean digits + Clear + Backspace — NO OK BUTTON) */}
+          <div className="grid grid-cols-3 gap-2 mt-5 pt-5 border-t border-white/10">
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit) => (
+              <button
+                key={digit}
+                type="button"
+                disabled={isVerifying}
+                onClick={() => handleDigitPress(digit)}
+                className="py-3 text-sm font-mono font-semibold rounded bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {digit}
+              </button>
+            ))}
+            <button
+              type="button"
+              disabled={isVerifying || pinInput.length === 0}
+              onClick={handleClearPin}
+              className="py-3 text-xs font-mono rounded bg-white/5 text-[#E4DED2]/60 hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-30"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              disabled={isVerifying}
+              onClick={() => handleDigitPress("0")}
+              className="py-3 text-sm font-mono font-semibold rounded bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+            >
+              0
+            </button>
+            <button
+              type="button"
+              disabled={isVerifying || pinInput.length === 0}
+              onClick={handleBackspace}
+              className="py-3 text-sm font-mono rounded bg-white/5 text-[#E4DED2]/80 hover:bg-white/10 active:scale-95 transition-all cursor-pointer flex items-center justify-center disabled:opacity-30"
+              aria-label="Delete"
+            >
+              ⌫
+            </button>
+          </div>
+
+          <div className="mt-6 pt-4 text-xs text-[#E4DED2]/50">
+            <a href="#" className="hover:text-white underline">
+              ← Return to Public Storefront
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="font-body min-h-screen bg-[#F6F2EB] text-[#201D1B] flex flex-col">
+      <style>{FONT_IMPORT}</style>
+
+      {/* Top Admin Navigation Header */}
+      <header className="bg-[#201D1B] text-[#F6F2EB] px-6 py-3.5 flex items-center justify-between border-b border-[#332F2B] sticky top-0 z-40">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2.5">
+            <img
+              src={brandLogo}
+              alt={STORE_NAME}
+              className="w-9 h-9 object-contain rounded-full bg-white p-0.5 border border-[#A9824F] shadow-sm flex-shrink-0"
+            />
+            <div>
+              <p className="font-display font-semibold tracking-wide text-sm">{STORE_NAME}</p>
+              <p className="text-[10px] text-[#A9824F] uppercase tracking-wider font-semibold">Seller & Kitchen Dashboard</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <a
+            href="#"
+            onClick={() => {
+              try { sessionStorage.removeItem("tph_admin_authed"); } catch {}
+            }}
+            className="text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 transition-colors flex items-center gap-1.5"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+            <span>View Live Store</span>
+          </a>
+          <a
+            href="#track"
+            onClick={() => {
+              try { sessionStorage.removeItem("tph_admin_authed"); } catch {}
+            }}
+            className="text-xs px-3 py-1.5 rounded bg-[#6E1E2B] hover:opacity-90 transition-opacity"
+          >
+            Track Order Page
+          </a>
+          <button
+            onClick={handleLockPortal}
+            className="text-xs px-3 py-1.5 rounded bg-white/10 hover:bg-red-950/60 hover:text-red-300 border border-white/10 transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Log out of vendor portal"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
+            </svg>
+            <span>Logout</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Toast Alert — Top Center Green Badge */}
+      {toastMessage && (
+        <div
+          className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-5 py-2.5 rounded-full text-xs font-semibold shadow-2xl transition-all border pointer-events-none"
+          style={{ backgroundColor: "#1B5E20", color: "#FFFFFF", borderColor: "#4CAF50" }}
+        >
+          <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">✓</span>
+          <span className="tracking-wide">{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Main Admin Content Layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Sidebar (Matching Blueprint) */}
+        <aside className="w-56 bg-[#2B1B1E] text-[#F6F2EB] hidden md:flex flex-col justify-between p-4 flex-shrink-0">
+          <div className="space-y-6">
+            <div className="px-3 py-2 border-b border-white/10 flex items-center gap-2.5">
+              <img
+                src={brandLogo}
+                alt={STORE_NAME}
+                className="w-8 h-8 object-contain rounded-full bg-white p-0.5 border border-[#A9824F]"
+              />
+              <div>
+                <p className="text-[10px] text-[#E4DED2]/60 uppercase tracking-wider">Merchant Mode</p>
+                <p className="text-xs font-semibold text-white">The Platter House HQ</p>
+              </div>
+            </div>
+
+            <nav className="space-y-1">
+              {[
+                { key: "orders", label: "Orders", count: counts.all, icon: "📦" },
+                { key: "products", label: "Menu Catalog", icon: "🍱" },
+                { key: "customers", label: "Customers", icon: "👥" },
+                { key: "payments", label: "Payments (Paystack)", icon: "💳" },
+                { key: "analytics", label: "Sales Analytics", icon: "📈" },
+                { key: "settings", label: "Settings", icon: "⚙️" },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => setSidebarTab(item.key)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-sm text-xs font-medium transition-colors ${
+                    sidebarTab === item.key
+                      ? "bg-[#6E1E2B] text-white shadow-sm font-semibold"
+                      : "text-[#E4DED2]/80 hover:bg-white/5"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span>{item.icon}</span>
+                    <span>{item.label}</span>
+                  </div>
+                  {item.count !== undefined && (
+                    <span className="text-[10px] px-1.5 py-0.2 rounded bg-black/30 text-white font-mono">
+                      {item.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="pt-4 border-t border-white/10 text-[11px] text-[#E4DED2]/60 px-3">
+            <p className="font-semibold text-white/90">Paystack Live Sync</p>
+            <p className="text-[10px] text-green-400">● Webhook Listener Active</p>
+          </div>
+        </aside>
+
+        {/* Center / Right Content Area */}
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+          {/* Top Metrics Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs text-[#A9824F] font-semibold uppercase tracking-wider">Total Revenue</p>
+              <p className="font-display text-2xl font-bold text-[#6E1E2B] mt-1">{formatNaira(totalRevenue)}</p>
+              <p className="text-[11px] text-[#4A4642] mt-0.5">Paid via Paystack & transfers</p>
+            </div>
+
+            <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs text-[#A9824F] font-semibold uppercase tracking-wider">Total Orders</p>
+              <p className="font-display text-2xl font-bold text-[#201D1B] mt-1">{counts.all}</p>
+              <p className="text-[11px] text-[#4A4642] mt-0.5">{counts.confirmed} confirmed bookings</p>
+            </div>
+
+            <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs text-[#A9824F] font-semibold uppercase tracking-wider">Active in Kitchen</p>
+              <p className="font-display text-2xl font-bold text-[#201D1B] mt-1">{counts.preparing}</p>
+              <p className="text-[11px] text-[#4A4642] mt-0.5">Currently preparing dishes</p>
+            </div>
+
+            <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs text-[#A9824F] font-semibold uppercase tracking-wider">Awaiting Payment</p>
+              <p className="font-display text-2xl font-bold text-[#A9824F] mt-1">{counts.pending}</p>
+              <p className="text-[11px] text-[#4A4642] mt-0.5">Pending customer transfer</p>
+            </div>
+          </div>
+
+          {/* 3-Column Work Area: Orders Table, Selected Order Drawer, Notifications Feed */}
+          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
+            {/* Left Section: Orders Table & Tabs (7 cols) */}
+            <div className="xl:col-span-7 bg-[#FBF9F5] rounded-sm border border-[#E4DED2] p-5 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-[#E4DED2]">
+                <div>
+                  <h2 className="font-display text-2xl font-semibold text-[#201D1B]">Orders</h2>
+                  <p className="text-xs text-[#4A4642] mt-0.5">Manage customer orders, track payments, and dispatch catering</p>
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search Order ID, name..."
+                    className="pl-8 pr-3 py-1.5 text-xs rounded-sm border border-[#E4DED2] bg-white text-[#201D1B] focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                  <svg className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#888]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+              </div>
+
+              {/* Status Tabs (Matching Blueprint) */}
+              <div className="flex flex-wrap gap-1.5 my-4 border-b border-[#E4DED2]/60 pb-3 text-xs">
+                {[
+                  { key: "all", label: "All Orders", count: counts.all },
+                  { key: "pending", label: "Pending", count: counts.pending },
+                  { key: "confirmed", label: "Confirmed", count: counts.confirmed },
+                  { key: "preparing", label: "Preparing", count: counts.preparing },
+                  { key: "out_for_delivery", label: "Out for Delivery", count: counts.out_for_delivery },
+                  { key: "delivered", label: "Delivered", count: counts.delivered },
+                ].map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={`px-3 py-1.5 rounded-sm transition-all flex items-center gap-1.5 ${
+                      activeTab === tab.key
+                        ? "bg-[#6E1E2B] text-white font-semibold shadow-sm"
+                        : "hover:bg-[#E4DED2]/50 text-[#4A4642]"
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded ${
+                        activeTab === tab.key ? "bg-white/20 text-white" : "bg-[#E4DED2] text-[#201D1B]"
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Orders Table */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-[#E4DED2] text-[#A9824F] uppercase tracking-wider font-semibold">
+                      <th className="py-2.5 px-3">Order ID</th>
+                      <th className="py-2.5 px-3">Customer</th>
+                      <th className="py-2.5 px-3">Date</th>
+                      <th className="py-2.5 px-3">Amount</th>
+                      <th className="py-2.5 px-3">Payment</th>
+                      <th className="py-2.5 px-3">Status</th>
+                      <th className="py-2.5 px-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#E4DED2]/60">
+                    {filteredOrders.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" className="py-8 text-center text-xs text-[#888]">
+                          No orders found matching this filter.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredOrders.map((o) => {
+                        const isSelected = selectedOrder?.orderNumber === o.orderNumber;
+                        const isPaid = o.isPaid || (o.paymentStatus || "").toLowerCase() === "paid";
+                        return (
+                          <tr
+                            key={o.orderNumber}
+                            onClick={() => setSelectedOrder(o)}
+                            className={`cursor-pointer transition-colors ${
+                              isSelected ? "bg-[#6E1E2B]/10 font-medium" : "hover:bg-[#E4DED2]/30"
+                            }`}
+                          >
+                            <td className="py-3 px-3 font-mono font-semibold text-[#6E1E2B]">
+                              {o.orderNumber}
+                            </td>
+                            <td className="py-3 px-3">
+                              <p className="font-medium text-[#201D1B]">{o.customerName}</p>
+                              <p className="text-[10px] text-[#4A4642]">{o.phone}</p>
+                            </td>
+                            <td className="py-3 px-3 text-[#4A4642] whitespace-nowrap">
+                              {o.placedOn?.split(",")[0] || o.placedOn}
+                            </td>
+                            <td className="py-3 px-3 font-semibold text-[#201D1B]">
+                              {formatNaira(o.total)}
+                            </td>
+                            <td className="py-3 px-3">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                  isPaid
+                                    ? "bg-[#2E7D32]/10 text-[#2E7D32]"
+                                    : "bg-[#A9824F]/15 text-[#A9824F]"
+                                }`}
+                              >
+                                {isPaid ? "Paid" : "Unpaid"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3">
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                  o.status === "Delivered"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : o.status === "Preparing"
+                                    ? "bg-purple-100 text-purple-800"
+                                    : o.status === "Out for Delivery"
+                                    ? "bg-indigo-100 text-indigo-800"
+                                    : o.status === "Confirmed"
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : "bg-amber-100 text-amber-800"
+                                }`}
+                              >
+                                {o.status}
+                              </span>
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedOrder(o);
+                                }}
+                                className="px-2 py-1 text-[11px] rounded border border-[#201D1B]/30 hover:bg-[#201D1B] hover:text-white transition-colors"
+                              >
+                                View
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Middle Section: Selected Order Detail Drawer (5 cols) */}
+            <div className="xl:col-span-5 space-y-6">
+              {selectedOrder ? (
+                <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] p-5 shadow-sm">
+                  {/* Order Header */}
+                  <div className="flex items-start justify-between pb-4 mb-4 border-b border-[#E4DED2]">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-display text-xl font-bold text-[#6E1E2B]">
+                          Order #{selectedOrder.orderNumber}
+                        </h3>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                            selectedOrder.isPaid ? "bg-[#2E7D32]/10 text-[#2E7D32]" : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {selectedOrder.isPaid ? "Paid" : "Unpaid"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-[#4A4642] mt-0.5">Placed: {selectedOrder.placedOn}</p>
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          setDispenseKey((k) => k + 1);
+                          setShowReceiptModal(true);
+                        }}
+                        className="text-xs px-2.5 py-1 rounded border border-[#E4DED2] bg-white hover:bg-[#6E1E2B]/10 hover:border-[#6E1E2B] transition-colors flex items-center gap-1 cursor-pointer text-[#201D1B]"
+                        title="Print Customer Receipt or Kitchen Slip"
+                      >
+                        <svg className="w-3.5 h-3.5 text-[#6E1E2B]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                        </svg>
+                        <span>Print Slip</span>
+                      </button>
+
+                      <button
+                        onClick={() => setEditingOrder({ ...selectedOrder })}
+                        className="text-xs px-2.5 py-1 rounded border border-[#E4DED2] bg-white hover:bg-[#A9824F]/10 hover:border-[#A9824F] transition-colors flex items-center gap-1 cursor-pointer text-[#201D1B]"
+                        title="Edit Customer / Delivery Details"
+                      >
+                        <svg className="w-3.5 h-3.5 text-[#A9824F]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+                        </svg>
+                        <span>Edit</span>
+                      </button>
+
+                      <button
+                        onClick={() => deleteOrder(selectedOrder.orderNumber)}
+                        className="text-xs px-2 py-1 rounded border border-red-200 bg-red-50 text-red-600 hover:bg-red-100 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Delete Order Permanently"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" />
+                        </svg>
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Customer Information */}
+                  <div className="text-xs space-y-2 pb-4 mb-4 border-b border-[#E4DED2]">
+                    <p className="font-semibold uppercase tracking-wider text-[#A9824F]">Customer Details</p>
+                    <div className="grid grid-cols-2 gap-2 text-[#201D1B]">
+                      <div>
+                        <span className="text-[#888]">Name:</span>{" "}
+                        <span className="font-medium">{selectedOrder.customerName}</span>
+                      </div>
+                      <div>
+                        <span className="text-[#888]">Phone:</span>{" "}
+                        <span className="font-medium">{selectedOrder.phone}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#888]">Email:</span>{" "}
+                        <span className="font-medium">{selectedOrder.email}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#888]">Destination:</span>{" "}
+                        <span className="font-medium">{selectedOrder.address}</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-[#888]">Fulfillment:</span>{" "}
+                        <span className="font-medium">{selectedOrder.fulfillment} ({selectedOrder.preferredDate || "Standard"})</span>
+                      </div>
+                      {selectedOrder.notes && (
+                        <div className="col-span-2 bg-[#F6F2EB] p-2 rounded text-[11px] italic text-[#4A4642]">
+                          Note: "{selectedOrder.notes}"
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Line Items */}
+                  <div className="text-xs pb-4 mb-4 border-b border-[#E4DED2]">
+                    <p className="font-semibold uppercase tracking-wider text-[#A9824F] mb-2">Order Items</p>
+                    <div className="space-y-2">
+                      {selectedOrder.items?.map((item, idx) => (
+                        <div key={idx} className="flex justify-between items-center py-1 border-b border-[#E4DED2]/40 last:border-0">
+                          <div>
+                            <p className="font-medium text-[#201D1B]">{item.name}</p>
+                            <p className="text-[10px] text-[#888]">Qty: {item.qty} × {formatNaira(item.price)}</p>
+                          </div>
+                          <span className="font-semibold">{formatNaira(item.price * item.qty)}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="pt-3 mt-3 border-t border-[#E4DED2] space-y-1">
+                      <div className="flex justify-between text-[#4A4642]">
+                        <span>Subtotal:</span>
+                        <span>{formatNaira(selectedOrder.subtotal)}</span>
+                      </div>
+                      <div className="flex justify-between text-[#4A4642]">
+                        <span>Delivery Fee:</span>
+                        <span>{formatNaira(selectedOrder.deliveryFee)}</span>
+                      </div>
+                      <div className="flex justify-between font-bold text-sm text-[#201D1B] pt-1 border-t border-[#E4DED2]">
+                        <span>Total Paid:</span>
+                        <span className="text-[#6E1E2B] font-display text-base">{formatNaira(selectedOrder.total)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Payment Details */}
+                  <div className="text-xs pb-4 mb-4 border-b border-[#E4DED2] bg-[#F6F2EB] p-3 rounded">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="font-semibold text-[#6E1E2B]">Payment Information</p>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                        selectedOrder.isPaid || (selectedOrder.paymentStatus || "").toLowerCase() === "paid"
+                          ? "bg-[#2E7D32]/10 text-[#2E7D32]"
+                          : "bg-[#E65100]/15 text-[#E65100]"
+                      }`}>
+                        {selectedOrder.isPaid || (selectedOrder.paymentStatus || "").toLowerCase() === "paid" ? "● PAID" : "● AWAITING TRANSFER"}
+                      </span>
+                    </div>
+                    <p className="text-[#201D1B]">Gateway: {selectedOrder.paymentMethod || "Paystack"}</p>
+                    <p className="text-[#201D1B] font-mono">Ref: {selectedOrder.paymentReference || "N/A"}</p>
+                    <p className="text-[11px] text-[#4A4642] mt-1">Paid on: {selectedOrder.paidAt || selectedOrder.placedOn}</p>
+                  </div>
+
+                  {/* Bank Transfer Approval Card (If payment is pending verification) */}
+                  {(!selectedOrder.isPaid || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid") && (
+                    <div className="mb-4 p-3.5 rounded-sm bg-[#FFF8E1] border border-[#FFE082] text-xs space-y-2.5">
+                      <div className="flex items-start gap-2">
+                        <span className="text-base">⚠️</span>
+                        <div>
+                          <p className="font-semibold text-[#E65100]">Awaiting Bank Transfer Confirmation</p>
+                          <p className="text-[11px] text-[#5D4037] mt-0.5">
+                            Customer paid via direct GTBank transfer. Please check your bank app for <strong>{formatNaira(selectedOrder.total)}</strong> before confirming.
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => verifyTransferPayment(selectedOrder.orderNumber)}
+                        className="w-full py-2.5 rounded-sm text-white font-semibold text-xs shadow-sm hover:opacity-95 transition-opacity flex items-center justify-center gap-1.5 cursor-pointer"
+                        style={{ backgroundColor: "#2E7D32" }}
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                        <span>✓ I Have Received Funds — Confirm Order</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Stage Advancement Action Buttons (Matching Blueprint) */}
+                  <div className="space-y-2 pt-1">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-[#A9824F]">Update Order Stage</p>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        onClick={() => updateStatus(selectedOrder.orderNumber, 1, "Preparing")}
+                        className={`py-2 rounded-sm text-xs font-medium border transition-colors ${
+                          selectedOrder.status === "Preparing"
+                            ? "bg-[#6E1E2B] text-white border-[#6E1E2B]"
+                            : "hover:bg-[#E4DED2] border-[#E4DED2]"
+                        }`}
+                      >
+                        Preparing
+                      </button>
+                      <button
+                        onClick={() => updateStatus(selectedOrder.orderNumber, 2, "Out for Delivery")}
+                        className={`py-2 rounded-sm text-xs font-medium border transition-colors ${
+                          selectedOrder.status === "Out for Delivery"
+                            ? "bg-[#6E1E2B] text-white border-[#6E1E2B]"
+                            : "hover:bg-[#E4DED2] border-[#E4DED2]"
+                        }`}
+                      >
+                        Out for Delivery
+                      </button>
+                      <button
+                        onClick={() => updateStatus(selectedOrder.orderNumber, 3, "Delivered")}
+                        className={`py-2 rounded-sm text-xs font-medium border transition-colors ${
+                          selectedOrder.status === "Delivered"
+                            ? "bg-[#2E7D32] text-white border-[#2E7D32]"
+                            : "hover:bg-[#E4DED2] border-[#E4DED2]"
+                        }`}
+                      >
+                        Delivered
+                      </button>
+                    </div>
+
+                    {/* Customer Action Direct WhatsApp */}
+                    <div className="pt-2">
+                      <a
+                        href={`https://wa.me/${selectedOrder.phone?.replace(/[^0-9]/g, "")}?text=${encodeURIComponent(
+                          `Hello ${selectedOrder.customerName}, this is ${STORE_NAME}. Your order #${selectedOrder.orderNumber} is currently: ${selectedOrder.status}. Thank you for ordering with us!`
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-full py-2.5 rounded-sm text-xs font-semibold text-white flex items-center justify-center gap-2 shadow-sm transition-opacity hover:opacity-90"
+                        style={{ backgroundColor: "#25D366" }}
+                      >
+                        <span>WhatsApp Customer ({selectedOrder.phone})</span>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] p-8 text-center text-xs text-[#888]">
+                  Select an order from the table to view details.
+                </div>
+              )}
+
+              {/* Live Notifications Feed (Right Column in Blueprint) */}
+              <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] p-5 shadow-sm">
+                <div className="flex items-center justify-between pb-3 border-b border-[#E4DED2]">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    <h3 className="font-display text-base font-semibold text-[#201D1B]">Live Notifications</h3>
+                  </div>
+                  <button
+                    onClick={markAllNotificationsRead}
+                    className="text-[11px] text-[#A9824F] hover:underline"
+                  >
+                    Mark all as read
+                  </button>
+                </div>
+
+                <div className="divide-y divide-[#E4DED2]/60 mt-3 max-h-64 overflow-y-auto">
+                  {notifications.map((n) => (
+                    <div key={n.id} className="py-2.5 text-xs flex items-start gap-2.5">
+                      <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${n.unread ? "bg-[#6E1E2B]" : "bg-[#C9BFAE]"}`} />
+                      <div className="flex-1">
+                        <p className="font-semibold text-[#201D1B]">{n.title}</p>
+                        <p className="text-[#4A4642] text-[11px] mt-0.5">{n.desc}</p>
+                        <p className="text-[10px] text-[#888] mt-1">{n.time}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+
+      {/* EDIT ORDER MODAL DIALOG */}
+      {editingOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-[#6E1E2B] text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-display text-lg font-bold">Edit Order #{editingOrder.orderNumber}</h3>
+                <p className="text-xs text-white/80">Update customer contact or delivery details</p>
+              </div>
+              <button
+                onClick={() => setEditingOrder(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors text-sm cursor-pointer"
+                aria-label="Close modal"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveOrderEdit} className="p-6 space-y-4 overflow-y-auto flex-1">
+              {/* Customer Name & Phone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                    Customer Name <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editingOrder.customerName || ""}
+                    onChange={(e) =>
+                      setEditingOrder({ ...editingOrder, customerName: e.target.value })
+                    }
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                    Phone Number <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    required
+                    value={editingOrder.phone || ""}
+                    onChange={(e) =>
+                      setEditingOrder({ ...editingOrder, phone: e.target.value })
+                    }
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+              </div>
+
+              {/* Email & Delivery Date */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={editingOrder.email || ""}
+                    onChange={(e) =>
+                      setEditingOrder({ ...editingOrder, email: e.target.value })
+                    }
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                    Preferred Delivery / Event Date
+                  </label>
+                  <input
+                    type="text"
+                    value={editingOrder.preferredDate || ""}
+                    onChange={(e) =>
+                      setEditingOrder({ ...editingOrder, preferredDate: e.target.value })
+                    }
+                    placeholder="e.g. Tomorrow, 12:00 PM"
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+              </div>
+
+              {/* Delivery Address */}
+              <div>
+                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                  Delivery Address / Location <span className="text-[#6E1E2B]">*</span>
+                </label>
+                <textarea
+                  rows={2}
+                  required
+                  value={editingOrder.address || ""}
+                  onChange={(e) =>
+                    setEditingOrder({ ...editingOrder, address: e.target.value })
+                  }
+                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                />
+              </div>
+
+              {/* Special Instructions / Notes */}
+              <div>
+                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                  Special Notes & Dietary Instructions
+                </label>
+                <textarea
+                  rows={2}
+                  value={editingOrder.notes || ""}
+                  onChange={(e) =>
+                    setEditingOrder({ ...editingOrder, notes: e.target.value })
+                  }
+                  placeholder="e.g. Mild pepper, extra disposable spoons, call upon arrival"
+                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                />
+              </div>
+
+              {/* Order Items Info (Read-Only notice) */}
+              <div className="bg-[#E4DED2]/30 p-3 rounded-sm border border-[#E4DED2] text-[11px] text-[#4A4642]">
+                <p className="font-semibold text-[#201D1B] mb-1">Order Summary ({editingOrder.items?.length || 0} items):</p>
+                <ul className="list-disc list-inside space-y-0.5">
+                  {editingOrder.items?.map((item, idx) => (
+                    <li key={idx}>
+                      {item.qty}x {item.name} ({formatNaira(item.price * item.qty)})
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 font-medium text-[#201D1B]">Total: {formatNaira(editingOrder.total)}</p>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-3 border-t border-[#E4DED2] flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingOrder(null)}
+                  className="px-4 py-2 text-xs font-medium text-[#4A4642] hover:text-[#201D1B] border border-[#E4DED2] rounded-sm bg-white hover:bg-[#E4DED2]/40 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-[#6E1E2B] hover:bg-[#561722] rounded-sm shadow-sm transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Save Changes</span>
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+                  </svg>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* THERMAL RECEIPT / KITCHEN SLIP DISPENSER MODAL */}
+      {showReceiptModal && selectedOrder && (
+        <div
+          id="printable-receipt-modal"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/80 backdrop-blur-sm overflow-y-auto animate-fade-in"
+        >
+          <div className="w-full max-w-[420px] my-auto flex flex-col items-center">
+            
+            {/* Top Thermal Printer Slot (Machine Casing) - Hidden in Print */}
+            <div className="no-print w-full bg-[#1A1817] rounded-t-xl border border-[#3E3A36] p-3 shadow-2xl relative">
+              <div className="flex items-center justify-between pb-2 border-b border-[#2D2A26] text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="font-mono text-[11px] text-[#A9824F] font-semibold tracking-wider uppercase">
+                    Thermal POS 80mm
+                  </span>
+                </div>
+                
+                {/* Mode Selector Toggle */}
+                <div className="flex items-center bg-black/60 rounded p-0.5 border border-[#3E3A36]">
+                  <button
+                    onClick={() => {
+                      setReceiptMode("customer");
+                      setDispenseKey((k) => k + 1);
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                      receiptMode === "customer"
+                        ? "bg-[#6E1E2B] text-white"
+                        : "text-[#888] hover:text-white"
+                    }`}
+                  >
+                    Customer
+                  </button>
+                  <button
+                    onClick={() => {
+                      setReceiptMode("kitchen");
+                      setDispenseKey((k) => k + 1);
+                    }}
+                    className={`px-2 py-0.5 rounded text-[10px] font-medium transition-colors cursor-pointer ${
+                      receiptMode === "kitchen"
+                        ? "bg-[#6E1E2B] text-white"
+                        : "text-[#888] hover:text-white"
+                    }`}
+                  >
+                    Kitchen
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setShowReceiptModal(false)}
+                  className="w-6 h-6 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-xs ml-2 cursor-pointer transition-colors"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* The Recessed Paper Dispensing Mouth */}
+              <div className="mt-2.5 h-3 bg-[#0A0A09] rounded-full border-t border-black/80 shadow-inner flex items-center justify-center relative">
+                <div className="w-48 h-0.5 bg-[#252220] rounded-full" />
+              </div>
+            </div>
+
+            {/* Dispensing Paper Area: Clipped container allowing the ticket to slide out downwards */}
+            <div className="w-full flex justify-center overflow-hidden pt-1 pb-3">
+              <div
+                key={dispenseKey}
+                id="printable-ticket"
+                className="animate-dispense w-full max-w-[340px] bg-white text-black font-mono text-xs shadow-2xl relative select-none"
+                style={{
+                  filter: "drop-shadow(0 15px 25px rgba(0,0,0,0.45))",
+                }}
+              >
+                {/* Paper Top Margin */}
+                <div className="pt-5 px-5">
+                  {receiptMode === "customer" ? (
+                    /* ================= CUSTOMER RECEIPT VIEW ================= */
+                    <div className="space-y-3 text-center">
+                      {/* Brand Header with Logo */}
+                      <div className="flex flex-col items-center">
+                        <img
+                          src={brandLogo}
+                          alt={STORE_NAME}
+                          className="w-16 h-16 object-contain rounded-full bg-white p-1 border border-neutral-300 shadow-sm mb-1.5"
+                        />
+                        <h2 className="font-bold text-base tracking-widest uppercase">
+                          THE PLATTER HOUSE
+                        </h2>
+                        <p className="text-[10px] tracking-wide text-neutral-600 uppercase mt-0.5">
+                          Luxury Catering & Small Chops
+                        </p>
+                        <p className="text-[9px] text-neutral-500 mt-0.5">
+                          Lekki Phase 1, Lagos • +234 812 345 6789
+                        </p>
+                      </div>
+
+                      <div className="border-t border-dashed border-neutral-400 my-2" />
+
+                      {/* Order Info */}
+                      <div className="text-left text-[11px] space-y-1">
+                        <div className="flex justify-between font-bold">
+                          <span>ORDER: #{selectedOrder.orderNumber}</span>
+                          <span className="uppercase text-[10px] px-1 border border-black">
+                            {selectedOrder.fulfillment || "Delivery"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-neutral-600 text-[10px]">
+                          <span>DATE:</span>
+                          <span>{selectedOrder.placedOn}</span>
+                        </div>
+                        <div className="flex justify-between text-neutral-600 text-[10px]">
+                          <span>CLIENT:</span>
+                          <span className="font-semibold text-black truncate max-w-[170px]">
+                            {selectedOrder.customerName}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-neutral-600 text-[10px]">
+                          <span>PHONE:</span>
+                          <span>{selectedOrder.phone}</span>
+                        </div>
+                        <div className="text-[10px] text-neutral-600 pt-0.5">
+                          <span className="font-semibold text-black">DEST: </span>
+                          <span>{selectedOrder.address}</span>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-dashed border-neutral-400 my-2" />
+
+                      {/* Line Items */}
+                      <div className="text-left space-y-1.5 text-[11px]">
+                        <div className="flex justify-between text-[10px] font-bold pb-0.5 border-b border-neutral-300">
+                          <span>QTY  ITEM</span>
+                          <span>AMOUNT</span>
+                        </div>
+                        {selectedOrder.items?.map((item, idx) => (
+                          <div key={idx} className="flex justify-between items-start text-[10px] leading-tight">
+                            <span className="flex-1 pr-2">
+                              {item.qty}x {item.name}
+                            </span>
+                            <span className="font-semibold whitespace-nowrap">
+                              {formatNaira(item.price * item.qty)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="border-t border-dashed border-neutral-400 my-2" />
+
+                      {/* Financial Totals */}
+                      <div className="text-left text-[11px] space-y-1">
+                        <div className="flex justify-between text-[10px] text-neutral-600">
+                          <span>SUBTOTAL:</span>
+                          <span>{formatNaira(selectedOrder.subtotal)}</span>
+                        </div>
+                        <div className="flex justify-between text-[10px] text-neutral-600">
+                          <span>DELIVERY:</span>
+                          <span>{formatNaira(selectedOrder.deliveryFee || 0)}</span>
+                        </div>
+                        <div className="flex justify-between text-sm font-bold pt-1 border-t border-neutral-300">
+                          <span>TOTAL:</span>
+                          <span>{formatNaira(selectedOrder.total)}</span>
+                        </div>
+                      </div>
+
+                      <div className="border-t border-dashed border-neutral-400 my-2" />
+
+                      {/* Payment Status Stamp */}
+                      <div className="border border-neutral-800 p-1.5 rounded-sm text-center">
+                        <p className="font-bold text-xs uppercase tracking-wider">
+                          {selectedOrder.isPaid ? "✓ PAID IN FULL" : "⏳ PAYMENT PENDING"}
+                        </p>
+                        <p className="text-[9px] text-neutral-600 mt-0.5">
+                          Method: {selectedOrder.paymentMethod || "Bank Transfer"}
+                        </p>
+                        {selectedOrder.paymentReference && (
+                          <p className="text-[8px] text-neutral-500 font-mono">
+                            Ref: {selectedOrder.paymentReference}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Barcode & Footer */}
+                      <div className="pt-2 text-center space-y-1.5">
+                        <div className="flex justify-center items-center py-1">
+                          {/* Simulated Vector Barcode */}
+                          <div className="flex items-center gap-[2px] h-9">
+                            {[2,4,1,3,2,5,1,2,4,2,1,3,4,1,2,5,3,1,2,4,1,3,2,4,1,2].map((w, i) => (
+                              <div
+                                key={i}
+                                className="bg-black h-full"
+                                style={{ width: `${w}px` }}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-[9px] tracking-widest text-neutral-700">
+                          *{selectedOrder.orderNumber}*
+                        </p>
+                        <p className="text-[10px] font-bold uppercase tracking-wider pt-1">
+                          THANK YOU FOR YOUR PATRONAGE!
+                        </p>
+                        <p className="text-[8px] text-neutral-500">
+                          www.theplatterhouse.ng
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    /* ================= KITCHEN PREP SLIP VIEW (KOT) ================= */
+                    <div className="space-y-3 text-center">
+                      {/* Chef Header with Logo */}
+                      <div className="bg-neutral-900 text-white p-2.5 rounded-sm flex items-center gap-3 text-left">
+                        <img
+                          src={brandLogo}
+                          alt={STORE_NAME}
+                          className="w-11 h-11 object-contain rounded-full bg-white p-0.5 border border-white/40 flex-shrink-0"
+                        />
+                        <div>
+                          <h2 className="font-bold text-sm tracking-widest uppercase">
+                            🍳 KITCHEN PREP TICKET
+                          </h2>
+                          <p className="text-[9px] tracking-wider uppercase text-neutral-300 mt-0.5">
+                            CHEF & PACKING COPY (KOT)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="border-t-2 border-black my-2" />
+
+                      {/* Due Time & Target */}
+                      <div className="text-left space-y-1">
+                        <div className="bg-neutral-100 p-2 border border-neutral-300 rounded-sm">
+                          <p className="text-[9px] text-neutral-500 uppercase font-bold">REQUIRED BY:</p>
+                          <p className="text-xs font-bold text-black uppercase">
+                            {selectedOrder.preferredDate || "IMMEDIATE PREPARATION"}
+                          </p>
+                        </div>
+                        <div className="flex justify-between text-[11px] font-bold pt-1">
+                          <span>ORDER: #{selectedOrder.orderNumber}</span>
+                          <span className="uppercase text-[10px] px-1 bg-black text-white">
+                            {selectedOrder.fulfillment || "Delivery"}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-neutral-700">
+                          <span className="font-bold">CLIENT:</span> {selectedOrder.customerName} ({selectedOrder.phone})
+                        </p>
+                        <p className="text-[10px] text-neutral-700">
+                          <span className="font-bold">LOCATION:</span> {selectedOrder.address}
+                        </p>
+                      </div>
+
+                      <div className="border-t border-dashed border-neutral-400 my-2" />
+
+                      {/* Items to Cook with Checkboxes */}
+                      <div className="text-left space-y-2 text-[11px]">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-neutral-600">
+                          ITEMS TO COOK & ASSEMBLE:
+                        </p>
+                        {selectedOrder.items?.map((item, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-start gap-2 p-1.5 border border-neutral-300 rounded-sm bg-neutral-50"
+                          >
+                            <span className="w-4 h-4 border border-black rounded-[2px] inline-block flex-shrink-0 mt-0.5" />
+                            <div className="flex-1 leading-snug">
+                              <span className="font-bold text-xs">{item.qty}x </span>
+                              <span className="font-semibold text-xs uppercase">{item.name}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="border-t border-dashed border-neutral-400 my-2" />
+
+                      {/* Chef Notes / Allergies */}
+                      <div className="text-left bg-neutral-100 p-2 border border-neutral-300 rounded-sm text-[10px]">
+                        <p className="font-bold uppercase text-neutral-700 mb-0.5">⚠️ CHEF & ALLERGY NOTES:</p>
+                        <p className="text-neutral-800 italic">
+                          {selectedOrder.notes && selectedOrder.notes.trim() !== ""
+                            ? selectedOrder.notes
+                            : "No special dietary requests specified."}
+                        </p>
+                      </div>
+
+                      {/* Kitchen Checklist */}
+                      <div className="text-left text-[9px] space-y-1 text-neutral-600 pt-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3 h-3 border border-neutral-400 rounded-[2px]" />
+                          <span>Food temperature & freshness verified</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3 h-3 border border-neutral-400 rounded-[2px]" />
+                          <span>Platter sealed with branded sticker & ribbon</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-3 h-3 border border-neutral-400 rounded-[2px]" />
+                          <span>Cutlery & dip containers included</span>
+                        </div>
+                      </div>
+
+                      <div className="border-t-2 border-black my-2" />
+
+                      <div className="text-left text-[9px] pt-1">
+                        <p className="font-bold">HEAD CHEF SIGNATURE:</p>
+                        <div className="border-b border-black mt-4 mb-1" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Jagged Sawtooth Perforated Edge at the Bottom */}
+                <div className="w-full overflow-hidden leading-none h-3 pt-3">
+                  <svg
+                    className="w-full h-3 text-white fill-current block"
+                    viewBox="0 0 340 10"
+                    preserveAspectRatio="none"
+                  >
+                    <path d="M0,0 L8.5,10 L17,0 L25.5,10 L34,0 L42.5,10 L51,0 L59.5,10 L68,0 L76.5,10 L85,0 L93.5,10 L102,0 L110.5,10 L119,0 L127.5,10 L136,0 L144.5,10 L153,0 L161.5,10 L170,0 L178.5,10 L187,0 L195.5,10 L204,0 L212.5,10 L221,0 L229.5,10 L238,0 L246.5,10 L255,0 L263.5,10 L272,0 L280.5,10 L289,0 L297.5,10 L306,0 L314.5,10 L323,0 L331.5,10 L340,0 Z" />
+                  </svg>
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Floating Control Bar (No-Print) */}
+            <div className="no-print w-full flex items-center justify-between gap-2 pt-2 px-1 text-xs">
+              <button
+                type="button"
+                onClick={() => setDispenseKey((k) => k + 1)}
+                className="px-3 py-2 rounded-sm bg-white/10 hover:bg-white/20 text-white font-medium transition-colors flex items-center gap-1.5 cursor-pointer text-[11px]"
+                title="Feed ticket again"
+              >
+                <span>Feed Again 🔄</span>
+              </button>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowReceiptModal(false)}
+                  className="px-3 py-2 rounded-sm bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition-colors cursor-pointer text-[11px]"
+                >
+                  Close
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-4 py-2 rounded-sm bg-[#6E1E2B] hover:bg-[#541620] text-white font-semibold shadow-md transition-colors flex items-center gap-1.5 cursor-pointer text-xs"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                  <span>Print Ticket / PDF</span>
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

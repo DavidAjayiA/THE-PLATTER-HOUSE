@@ -1,14 +1,6 @@
 import { useState, useMemo } from "react";
 import { useCart } from "./CartContext.jsx";
-import assortedSmallChopsImg from "./IMG/assorted small chops.jpg";
-import smallChops100Img from "./IMG/small chops assorted.jpg";
-import sc2Img from "./IMG/SC2.jpg";
-import chickenSkewersImg from "./IMG/chicken skiwer platter.jpg";
-import puffPuffImg from "./IMG/puff puff.jpg";
-import springRollSamosaImg from "./IMG/spring roll & samosa.jpg";
-import meatPieImg from "./IMG/meat pie.jpg";
-import chinChinImg from "./IMG/chin chin.jpg";
-import birthdayCakeImg from "./IMG/birthday cake.jpg";
+import { useMenu } from "./MenuContext.jsx";
 import brandLogo from "./IMG/the_platter_house_hq.jpg";
 
 const FONT_IMPORT = `
@@ -24,117 +16,22 @@ const NAV_LINKS = [
   { label: "Track Order", href: "#track" },
 ];
 
-const CATEGORIES = ["All", "Small Chops", "Platters & Trays", "Pastries & Desserts", "Event Packages"];
-
-const PRODUCTS = [
-  {
-    name: "Spring Roll & Samosa Mix (40pc)",
-    category: "Small Chops",
-    price: 22000,
-    image: springRollSamosaImg,
-  },
-  {
-    name: "Puff-Puff",
-    category: "Small Chops",
-    price: 18000,
-    image: puffPuffImg,
-  },
-  {
-    name: "Chicken Skewer Platter (30pc)",
-    category: "Small Chops",
-    price: 26000,
-    image: chickenSkewersImg,
-  },
-  {
-    name: "Assorted Small Chops (100pc)",
-    category: "Small Chops",
-    price: 45000,
-    image: smallChops100Img,
-  },
-  {
-    name: "Jollof Rice Party Tray",
-    category: "Platters & Trays",
-    price: 35000,
-  image: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    name: "Small Chops Platter (50pc)",
-    category: "Platters & Trays",
-    price: 42000,
-    image: sc2Img,
-  },
-  {
-    name: "Swallow & Soup Combo Tray",
-    category: "Platters & Trays",
-    price: 38000,
-   
-    image: "https://images.unsplash.com/photo-1604329760661-e71dc83f8f26?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    name: "Grilled Fish & Peppered Sauce Tray",
-    category: "Platters & Trays",
-    price: 48000,
-    image: "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    name: "Meat Pie Box (24pc)",
-    category: "Pastries & Desserts",
-    price: 16000,
-    image: meatPieImg,
-  },
-  {
-    name: "Chin Chin, Family Pack",
-    category: "Pastries & Desserts",
-    price: 9000,
-    image: chinChinImg,
-  },
-  {
-    name: "Birthday Cake",
-    category: "Pastries & Desserts",
-    price: 55000,
-    image: birthdayCakeImg,
-  },
-  {
-    name: "Wedding Cake, 3-Tier",
-    category: "Pastries & Desserts",
-    price: 120000,
-    image: "https://images.unsplash.com/photo-1535254973040-607b474cb50d?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    name: "Intimate Gathering Package (20 guests)",
-    category: "Event Packages",
-    price: 180000,
-    image: "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    name: "Classic Wedding Package (100 guests)",
-    category: "Event Packages",
-    price: 850000,
-    image: "https://images.unsplash.com/photo-1511795409834-ef04bbd61622?auto=format&fit=crop&w=800&q=80",
-  },
-  {
-    name: "Corporate Lunch Package (50 guests)",
-    category: "Event Packages",
-    price: 320000,
-    image: "https://images.unsplash.com/photo-1528605248644-14dd04022da1?auto=format&fit=crop&w=800&q=80",
-  },
-];
-
 function formatNaira(amount) {
-  return `₦${amount.toLocaleString("en-NG")}`;
+  return `₦${(amount || 0).toLocaleString("en-NG")}`;
 }
 
 export default function ShopPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState("All");
   const { cartCount, addToCart } = useCart();
+  const { products, categories } = useMenu();
   const [justAdded, setJustAdded] = useState(null);
   const [showToast, setShowToast] = useState(false);
 
   const filteredProducts = useMemo(() => {
-    if (activeCategory === "All") return PRODUCTS;
-    return PRODUCTS.filter((p) => p.category === activeCategory);
-  }, [activeCategory]);
+    if (activeCategory === "All") return products;
+    return products.filter((p) => p.category === activeCategory);
+  }, [activeCategory, products]);
 
   function handleAddToCart(product) {
     addToCart(product);
@@ -226,7 +123,7 @@ export default function ShopPage() {
           className="flex gap-2 overflow-x-auto pb-4 mb-8"
           style={{ borderBottom: "1px solid #E4DED2" }}
         >
-          {CATEGORIES.map((cat) => (
+          {categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setActiveCategory(cat)}
@@ -246,37 +143,53 @@ export default function ShopPage() {
       {/* Product grid */}
       <section className="max-w-6xl mx-auto px-6 md:px-10 pb-20">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-10">
-          {filteredProducts.map((product) => (
-            <div key={product.name} className="flex flex-col group">
-              <div
-                className="w-full aspect-square overflow-hidden mb-4 rounded-sm relative bg-[#E4DED2] shadow-sm"
-                style={{ border: "1px solid #E4DED2" }}
-              >
-                <img
-                  src={product.image}
-                  alt={product.name}
-                  loading="lazy"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                />
+          {filteredProducts.map((product) => {
+            const isSoldOut = product.inStock === false;
+            return (
+              <div key={product.id || product.name} className="flex flex-col group">
+                <div
+                  className="w-full aspect-square overflow-hidden mb-4 rounded-sm relative bg-[#E4DED2] shadow-sm"
+                  style={{ border: "1px solid #E4DED2" }}
+                >
+                  <img
+                    src={product.image}
+                    alt={product.name}
+                    loading="lazy"
+                    className={`w-full h-full object-cover transition-transform duration-500 ${
+                      isSoldOut ? "grayscale opacity-60" : "group-hover:scale-105"
+                    }`}
+                  />
+                  {/* Sold out overlay tag */}
+                  {isSoldOut && (
+                    <div className="absolute inset-0 bg-black/40 flex items-center justify-center p-2">
+                      <span className="bg-[#6E1E2B] text-white text-[11px] font-bold uppercase tracking-wider px-3 py-1 rounded-sm shadow-md border border-white/20">
+                        Sold Out
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <p className="text-xs mb-1 font-medium tracking-wide uppercase" style={{ color: "#A9824F" }}>
+                  {product.category}
+                </p>
+                <h3 className="font-display text-base md:text-lg mb-2 leading-snug">{product.name}</h3>
+                <span className="text-sm font-semibold mb-3">{formatNaira(product.price)}</span>
+                <button
+                  onClick={() => !isSoldOut && handleAddToCart(product)}
+                  disabled={isSoldOut}
+                  className="mt-auto w-full text-sm px-4 py-2.5 rounded-sm font-medium transition-all"
+                  style={
+                    isSoldOut
+                      ? { backgroundColor: "#E4DED2", color: "#8A857D", cursor: "not-allowed", border: "1px solid #E4DED2" }
+                      : justAdded === product.name
+                      ? { backgroundColor: "#A9824F", color: "#F6F2EB" }
+                      : { border: "1px solid #201D1B", color: "#201D1B", cursor: "pointer" }
+                  }
+                >
+                  {isSoldOut ? "Sold Out" : justAdded === product.name ? "✓ Added to cart" : "Add to cart"}
+                </button>
               </div>
-              <p className="text-xs mb-1 font-medium tracking-wide uppercase" style={{ color: "#A9824F" }}>
-                {product.category}
-              </p>
-              <h3 className="font-display text-base md:text-lg mb-2 leading-snug">{product.name}</h3>
-              <span className="text-sm font-semibold mb-3">{formatNaira(product.price)}</span>
-              <button
-                onClick={() => handleAddToCart(product)}
-                className="mt-auto w-full text-sm px-4 py-2.5 rounded-sm font-medium transition-all"
-                style={
-                  justAdded === product.name
-                    ? { backgroundColor: "#A9824F", color: "#F6F2EB" }
-                    : { border: "1px solid #201D1B", color: "#201D1B" }
-                }
-              >
-                {justAdded === product.name ? "✓ Added to cart" : "Add to cart"}
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {filteredProducts.length === 0 && (

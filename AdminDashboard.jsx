@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { STORE_NAME, BUSINESS_EMAIL, BUSINESS_WHATSAPP_PHONE, ADMIN_PIN } from "./config.js";
 import brandLogo from "./IMG/the_platter_house_hq.jpg";
+import { useMenu } from "./MenuContext.jsx";
 
 const FONT_IMPORT = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Work+Sans:wght@400;500;600;700&display=swap');
@@ -475,6 +476,144 @@ export default function AdminDashboard() {
     showToast("All notifications marked as read");
   }
 
+  // ==========================================
+  // MODULE 4: DYNAMIC MENU CATALOG STUDIO STATE
+  // ==========================================
+  const {
+    products,
+    categories,
+    toggleStock,
+    updateProduct,
+    addProduct,
+    deleteProduct,
+    resetMenuToDefault,
+  } = useMenu();
+
+  const [menuSearchQuery, setMenuSearchQuery] = useState("");
+  const [menuActiveCategory, setMenuActiveCategory] = useState("All");
+  const [editingProduct, setEditingProduct] = useState(null);
+  const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [newProductForm, setNewProductForm] = useState({
+    name: "",
+    category: "Small Chops",
+    price: "",
+    description: "",
+    image: "",
+  });
+
+  const menuMetrics = useMemo(() => {
+    const total = products.length;
+    const inStock = products.filter((p) => p.inStock).length;
+    const soldOut = total - inStock;
+    return { total, inStock, soldOut };
+  }, [products]);
+
+  const filteredCatalog = useMemo(() => {
+    return products.filter((item) => {
+      const matchesCat =
+        menuActiveCategory === "All" || item.category === menuActiveCategory;
+      const q = menuSearchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !q ||
+        (item.name && item.name.toLowerCase().includes(q)) ||
+        (item.category && item.category.toLowerCase().includes(q)) ||
+        (item.description && item.description.toLowerCase().includes(q));
+      return matchesCat && matchesSearch;
+    });
+  }, [products, menuActiveCategory, menuSearchQuery]);
+
+  function handleToggleStock(product) {
+    toggleStock(product.id);
+    const willBeInStock = !product.inStock;
+    showToast(
+      willBeInStock
+        ? `✓ "${product.name}" is now LIVE in stock.`
+        : `✕ "${product.name}" is now marked as SOLD OUT.`
+    );
+  }
+
+  function handleDeleteProduct(product) {
+    if (window.confirm(`Are you sure you want to delete "${product.name}" from your menu catalog?`)) {
+      deleteProduct(product.id);
+      showToast(`Removed "${product.name}" from catalog.`);
+    }
+  }
+
+  function handleSaveProductEdit(e) {
+    e.preventDefault();
+    if (!editingProduct) return;
+    updateProduct(editingProduct.id, {
+      name: (editingProduct.name || "").trim(),
+      category: (editingProduct.category || "Small Chops").trim(),
+      price: Number(editingProduct.price) || 0,
+      description: (editingProduct.description || "").trim(),
+      image: (editingProduct.image || "").trim(),
+      inStock: editingProduct.inStock ?? true,
+    });
+    setEditingProduct(null);
+    showToast(`✓ Updated "${editingProduct.name}" details.`);
+  }
+
+  function handleCreateProduct(e) {
+    e.preventDefault();
+    if (!newProductForm.name.trim() || !newProductForm.price) {
+      showToast("Please enter dish name and price.");
+      return;
+    }
+    const defaultPlaceholder = "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&w=800&q=80";
+
+    const created = addProduct({
+      name: newProductForm.name.trim(),
+      category: newProductForm.category || "Small Chops",
+      price: Number(newProductForm.price) || 0,
+      description: (newProductForm.description || "").trim(),
+      image: (newProductForm.image || "").trim() || defaultPlaceholder,
+    });
+
+    setIsAddingProduct(false);
+    setNewProductForm({
+      name: "",
+      category: "Small Chops",
+      price: "",
+      description: "",
+      image: "",
+    });
+    showToast(`🎉 Added "${created.name}" to menu catalog!`);
+  }
+
+  function handleResetMenu() {
+    if (window.confirm("Reset menu to factory default items? Any custom added dishes will be restored.")) {
+      resetMenuToDefault();
+      showToast("Menu catalog restored to factory default.");
+    }
+  }
+
+  // Unique Customers aggregated from orders
+  const uniqueCustomers = useMemo(() => {
+    const map = new Map();
+    orders.forEach((o) => {
+      const key = (o.phone || o.customerName || "").trim().toLowerCase();
+      if (!key) return;
+      if (!map.has(key)) {
+        map.set(key, {
+          name: o.customerName,
+          phone: o.phone,
+          email: o.email || "N/A",
+          address: o.address || "N/A",
+          ordersCount: 1,
+          totalSpent: o.isPaid ? o.total : 0,
+          lastOrderDate: o.placedOn,
+        });
+      } else {
+        const item = map.get(key);
+        item.ordersCount += 1;
+        if (o.isPaid) item.totalSpent += o.total;
+        map.set(key, item);
+      }
+    });
+    return Array.from(map.values());
+  }, [orders]);
+
   // Filtered orders calculation
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
@@ -762,8 +901,8 @@ export default function AdminDashboard() {
             <nav className="space-y-1">
               {[
                 { key: "orders", label: "Orders", count: counts.all, icon: "📦" },
-                { key: "products", label: "Menu Catalog", icon: "🍱" },
-                { key: "customers", label: "Customers", icon: "👥" },
+                { key: "products", label: "Menu Catalog", count: products.length, icon: "🍱" },
+                { key: "customers", label: "Customers", count: uniqueCustomers.length, icon: "👥" },
                 { key: "payments", label: "Payments (Paystack)", icon: "💳" },
                 { key: "analytics", label: "Sales Analytics", icon: "📈" },
                 { key: "settings", label: "Settings", icon: "⚙️" },
@@ -799,8 +938,10 @@ export default function AdminDashboard() {
 
         {/* Center / Right Content Area */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          {/* Top Metrics Strip */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+          {sidebarTab === "orders" && (
+            <>
+              {/* Top Metrics Strip */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
             <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm">
               <p className="text-xs text-[#A9824F] font-semibold uppercase tracking-wider">Total Revenue</p>
               <p className="font-display text-2xl font-bold text-[#6E1E2B] mt-1">{formatNaira(totalRevenue)}</p>
@@ -1231,8 +1372,417 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
-        </main>
-      </div>
+        </>
+      )}
+
+      {/* MODULE 4: MENU CATALOG & DISH STUDIO */}
+      {sidebarTab === "products" && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Top Header & Quick Action Buttons */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E4DED2]">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🍱</span>
+                <h2 className="font-display text-2xl md:text-3xl font-bold text-[#201D1B]">
+                  Menu Catalog & Dish Studio
+                </h2>
+              </div>
+              <p className="text-xs sm:text-sm text-[#4A4642] mt-1">
+                Manage live menu prices, 1-click in-stock availability, catering trays, and photos.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleResetMenu}
+                className="text-xs px-3.5 py-2 rounded-sm border border-[#E4DED2] bg-white text-[#4A4642] hover:text-[#201D1B] hover:bg-[#E4DED2]/30 transition-colors cursor-pointer font-medium"
+                title="Restore original starter dishes"
+              >
+                Reset to Default
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsAddingProduct(true)}
+                className="text-xs px-4 py-2 rounded-sm bg-[#6E1E2B] text-white hover:bg-[#561722] font-semibold transition-colors shadow-sm flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="text-sm font-bold">+</span>
+                <span>Add New Dish</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Metric Cards Strip */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs text-[#A9824F] font-semibold uppercase tracking-wider">Total Menu Items</p>
+              <p className="font-display text-2xl font-bold text-[#201D1B] mt-1">{menuMetrics.total}</p>
+              <p className="text-[11px] text-[#4A4642] mt-0.5">Dishes across all categories</p>
+            </div>
+
+            <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs text-[#A9824F] font-semibold uppercase tracking-wider">In Stock (Live)</p>
+              <p className="font-display text-2xl font-bold text-emerald-700 mt-1 flex items-center gap-2">
+                <span>{menuMetrics.inStock}</span>
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+              </p>
+              <p className="text-[11px] text-[#4A4642] mt-0.5">Visible & orderable in customer shop</p>
+            </div>
+
+            <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs text-[#A9824F] font-semibold uppercase tracking-wider">Sold Out (Paused)</p>
+              <p className="font-display text-2xl font-bold text-[#6E1E2B] mt-1">{menuMetrics.soldOut}</p>
+              <p className="text-[11px] text-[#4A4642] mt-0.5">Marked Sold Out on customer shop</p>
+            </div>
+
+            <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs text-[#A9824F] font-semibold uppercase tracking-wider">Categories</p>
+              <p className="font-display text-2xl font-bold text-[#201D1B] mt-1">
+                {Math.max(categories.length - 1, 1)}
+              </p>
+              <p className="text-[11px] text-[#4A4642] mt-0.5">Active food sections</p>
+            </div>
+          </div>
+
+          {/* Filter Strip & Live Search */}
+          <div className="bg-[#FBF9F5] p-4 rounded-sm border border-[#E4DED2] shadow-sm flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            {/* Category Pills */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 md:pb-0">
+              {categories.map((cat) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => setMenuActiveCategory(cat)}
+                  className={`text-xs px-3.5 py-1.5 rounded-sm whitespace-nowrap transition-colors cursor-pointer ${
+                    menuActiveCategory === cat
+                      ? "bg-[#6E1E2B] text-white font-semibold shadow-sm"
+                      : "bg-white border border-[#E4DED2] text-[#4A4642] hover:text-[#201D1B]"
+                  }`}
+                >
+                  {cat}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="relative min-w-[240px]">
+              <input
+                type="text"
+                value={menuSearchQuery}
+                onChange={(e) => setMenuSearchQuery(e.target.value)}
+                placeholder="Search dishes by name or ingredients..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+              />
+              <svg
+                className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-[#888]"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+            </div>
+          </div>
+
+          {/* Dish Catalog Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+            {filteredCatalog.map((dish) => (
+              <div
+                key={dish.id}
+                className={`bg-[#FBF9F5] rounded-sm border transition-all duration-200 flex flex-col overflow-hidden shadow-sm hover:shadow-md ${
+                  dish.inStock ? "border-[#E4DED2]" : "border-amber-300/80 bg-[#FFFDF9]"
+                }`}
+              >
+                {/* Card Image Banner */}
+                <div className="w-full h-44 bg-[#E4DED2] relative overflow-hidden group">
+                  <img
+                    src={dish.image}
+                    alt={dish.name}
+                    className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${
+                      !dish.inStock ? "grayscale opacity-75" : ""
+                    }`}
+                    loading="lazy"
+                  />
+                  {/* Category Pill Tag */}
+                  <span className="absolute top-2 left-2 px-2 py-0.5 bg-black/70 backdrop-blur-sm text-[#A9824F] text-[10px] uppercase font-bold tracking-wider rounded">
+                    {dish.category}
+                  </span>
+
+                  {/* In Stock / Sold Out Badge */}
+                  <span
+                    className={`absolute top-2 right-2 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded shadow ${
+                      dish.inStock
+                        ? "bg-emerald-600 text-white"
+                        : "bg-[#6E1E2B] text-white animate-pulse"
+                    }`}
+                  >
+                    {dish.inStock ? "● In Stock" : "✕ Sold Out"}
+                  </span>
+
+                  {/* Price Pill */}
+                  <span className="absolute bottom-2 right-2 px-2.5 py-1 bg-[#201D1B]/85 text-white font-mono text-xs font-bold rounded">
+                    {formatNaira(dish.price)}
+                  </span>
+                </div>
+
+                {/* Card Body */}
+                <div className="p-4 flex-1 flex flex-col">
+                  <h3 className="font-display text-base font-bold text-[#201D1B] leading-snug line-clamp-1">
+                    {dish.name}
+                  </h3>
+                  <p className="text-xs text-[#4A4642] mt-1.5 line-clamp-2 min-h-[32px]">
+                    {dish.description || "No specific recipe description provided."}
+                  </p>
+
+                  {/* Quick Actions Footer */}
+                  <div className="mt-4 pt-3 border-t border-[#E4DED2] flex items-center justify-between gap-2">
+                    {/* 1-Click Stock Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleToggleStock(dish)}
+                      className={`flex-1 text-xs py-1.5 px-2 rounded-sm font-semibold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                        dish.inStock
+                          ? "bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100"
+                          : "bg-red-50 text-[#6E1E2B] border border-red-300 hover:bg-red-100"
+                      }`}
+                      title={dish.inStock ? "Click to mark as Sold Out" : "Click to mark as In Stock"}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${dish.inStock ? "bg-emerald-500" : "bg-red-500"}`} />
+                      <span>{dish.inStock ? "In Stock" : "Sold Out"}</span>
+                    </button>
+
+                    {/* Edit Dish Button */}
+                    <button
+                      type="button"
+                      onClick={() => setEditingProduct(dish)}
+                      className="p-1.5 text-xs text-[#4A4642] hover:text-[#6E1E2B] border border-[#E4DED2] bg-white hover:bg-[#E4DED2]/30 rounded-sm transition-colors cursor-pointer"
+                      title="Edit dish name, price or photo"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                      </svg>
+                    </button>
+
+                    {/* Delete Dish Button */}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteProduct(dish)}
+                      className="p-1.5 text-xs text-red-600 hover:text-red-800 border border-red-200 bg-white hover:bg-red-50 rounded-sm transition-colors cursor-pointer"
+                      title="Delete dish from catalog"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {filteredCatalog.length === 0 && (
+            <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] p-12 text-center">
+              <p className="text-3xl mb-2">🍽️</p>
+              <p className="font-display text-lg font-bold text-[#201D1B]">No dishes found</p>
+              <p className="text-xs text-[#4A4642] mt-1 max-w-sm mx-auto">
+                No items match your active search or category filters. Try switching category or clear the search query.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuActiveCategory("All");
+                  setMenuSearchQuery("");
+                }}
+                className="mt-4 text-xs font-semibold px-4 py-2 bg-[#6E1E2B] text-white rounded-sm hover:bg-[#561722] cursor-pointer"
+              >
+                View All Dishes
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* CUSTOMERS DIRECTORY & CRM */}
+      {sidebarTab === "customers" && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="pb-4 border-b border-[#E4DED2]">
+            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Customer Directory & CRM</h2>
+            <p className="text-xs text-[#4A4642] mt-0.5">Direct contacts, order history, and 1-click WhatsApp customer care</p>
+          </div>
+
+          <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] overflow-x-auto shadow-sm">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-[#E4DED2] bg-[#F3EDE2]/60 text-[#201D1B] font-semibold">
+                  <th className="p-3.5">Customer</th>
+                  <th className="p-3.5">Phone & Contact</th>
+                  <th className="p-3.5">Delivery Address</th>
+                  <th className="p-3.5 text-center">Orders Placed</th>
+                  <th className="p-3.5 text-right">Lifetime Spend</th>
+                  <th className="p-3.5 text-center">Quick WhatsApp</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E4DED2]">
+                {uniqueCustomers.map((cust, idx) => (
+                  <tr key={idx} className="hover:bg-white/60 transition-colors">
+                    <td className="p-3.5 font-semibold text-[#201D1B]">{cust.name}</td>
+                    <td className="p-3.5 text-[#4A4642]">
+                      <p className="font-mono">{cust.phone}</p>
+                      <p className="text-[11px] text-[#888]">{cust.email}</p>
+                    </td>
+                    <td className="p-3.5 text-[#4A4642] max-w-xs truncate">{cust.address}</td>
+                    <td className="p-3.5 text-center font-bold text-[#201D1B]">{cust.ordersCount}</td>
+                    <td className="p-3.5 text-right font-bold text-[#6E1E2B] font-mono">{formatNaira(cust.totalSpent)}</td>
+                    <td className="p-3.5 text-center">
+                      <a
+                        href={`https://wa.me/${(cust.phone || "").replace(/[^0-9]/g, "")}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 px-3 py-1 rounded bg-emerald-600 text-white font-medium text-[11px] hover:bg-emerald-700 shadow-sm"
+                      >
+                        <span>Chat</span>
+                        <span>💬</span>
+                      </a>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* PAYMENTS & SETTLEMENT LEDGER */}
+      {sidebarTab === "payments" && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="pb-4 border-b border-[#E4DED2]">
+            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Payments & Settlement Ledger</h2>
+            <p className="text-xs text-[#4A4642] mt-0.5">Paystack webhook logs, direct bank transfers, and verification status</p>
+          </div>
+
+          <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] overflow-x-auto shadow-sm">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="border-b border-[#E4DED2] bg-[#F3EDE2]/60 text-[#201D1B] font-semibold">
+                  <th className="p-3.5">Reference ID</th>
+                  <th className="p-3.5">Order #</th>
+                  <th className="p-3.5">Customer</th>
+                  <th className="p-3.5">Method</th>
+                  <th className="p-3.5 text-right">Amount</th>
+                  <th className="p-3.5 text-center">Status</th>
+                  <th className="p-3.5 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E4DED2]">
+                {orders.map((o) => (
+                  <tr key={o.orderNumber} className="hover:bg-white/60 transition-colors">
+                    <td className="p-3.5 font-mono text-[11px] text-[#4A4642]">{o.paymentReference || "N/A"}</td>
+                    <td className="p-3.5 font-bold text-[#201D1B]">#{o.orderNumber}</td>
+                    <td className="p-3.5 text-[#201D1B] font-medium">{o.customerName}</td>
+                    <td className="p-3.5 text-[#4A4642]">{o.paymentMethod}</td>
+                    <td className="p-3.5 text-right font-bold text-[#201D1B] font-mono">{formatNaira(o.total)}</td>
+                    <td className="p-3.5 text-center">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded text-[10px] font-bold uppercase ${
+                          o.isPaid ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {o.paymentStatus}
+                      </span>
+                    </td>
+                    <td className="p-3.5 text-center">
+                      {!o.isPaid ? (
+                        <button
+                          type="button"
+                          onClick={() => verifyTransferPayment(o.orderNumber)}
+                          className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-600 text-white rounded hover:bg-emerald-700 cursor-pointer"
+                        >
+                          Verify Transfer
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-emerald-700 font-medium">✓ Settled</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* SALES ANALYTICS */}
+      {sidebarTab === "analytics" && (
+        <div className="space-y-6 animate-fade-in">
+          <div className="pb-4 border-b border-[#E4DED2]">
+            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Sales Analytics & Operations</h2>
+            <p className="text-xs text-[#4A4642] mt-0.5">High-level financial summaries, average order size, and kitchen performance</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            <div className="bg-[#FBF9F5] p-5 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs font-semibold text-[#A9824F] uppercase tracking-wider">Gross Sales</p>
+              <p className="font-display text-3xl font-bold text-[#6E1E2B] mt-1">{formatNaira(totalRevenue)}</p>
+              <p className="text-xs text-[#4A4642] mt-1">From all confirmed & paid orders</p>
+            </div>
+
+            <div className="bg-[#FBF9F5] p-5 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs font-semibold text-[#A9824F] uppercase tracking-wider">Average Order Value (AOV)</p>
+              <p className="font-display text-3xl font-bold text-[#201D1B] mt-1">
+                {formatNaira(counts.all > 0 ? Math.round(totalRevenue / counts.all) : 0)}
+              </p>
+              <p className="text-xs text-[#4A4642] mt-1">Average spent per catering customer</p>
+            </div>
+
+            <div className="bg-[#FBF9F5] p-5 rounded-sm border border-[#E4DED2] shadow-sm">
+              <p className="text-xs font-semibold text-[#A9824F] uppercase tracking-wider">Delivery vs Pickup</p>
+              <p className="font-display text-3xl font-bold text-[#201D1B] mt-1">
+                {orders.filter((o) => o.fulfillment === "Delivery").length} / {orders.filter((o) => o.fulfillment === "Pickup").length}
+              </p>
+              <p className="text-xs text-[#4A4642] mt-1">Delivery runs vs Hub collections</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* STORE & VENDOR SETTINGS */}
+      {sidebarTab === "settings" && (
+        <div className="space-y-6 animate-fade-in max-w-3xl">
+          <div className="pb-4 border-b border-[#E4DED2]">
+            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Store & Vendor Settings</h2>
+            <p className="text-xs text-[#4A4642] mt-0.5">Operational configuration, payment accounts, and security preferences</p>
+          </div>
+
+          <div className="bg-[#FBF9F5] p-6 rounded-sm border border-[#E4DED2] shadow-sm space-y-4">
+            <h3 className="font-display text-base font-bold text-[#201D1B]">Bank Transfer Details (GTBank)</h3>
+            <p className="text-xs text-[#4A4642]">
+              Customers who choose "Direct Bank Transfer" at checkout see these instructions:
+            </p>
+            <div className="p-4 bg-white border border-[#E4DED2] rounded-sm font-mono text-xs space-y-1">
+              <p><span className="text-[#888]">Bank Name:</span> <strong>Guaranty Trust Bank (GTBank)</strong></p>
+              <p><span className="text-[#888]">Account Name:</span> <strong>The Platter House Catering Ltd</strong></p>
+              <p><span className="text-[#888]">Account Number:</span> <strong>0123456789</strong></p>
+            </div>
+          </div>
+
+          <div className="bg-[#FBF9F5] p-6 rounded-sm border border-[#E4DED2] shadow-sm space-y-3">
+            <h3 className="font-display text-base font-bold text-[#201D1B]">Vendor Security</h3>
+            <p className="text-xs text-[#4A4642]">
+              Portal Master PIN is currently set to: <strong className="font-mono bg-white px-2 py-0.5 border rounded">{ADMIN_PIN || "1234"}</strong>
+            </p>
+            <p className="text-[11px] text-[#888]">
+              To change your PIN permanently, update the <code className="bg-white px-1 py-0.5 border">ADMIN_PIN</code> in <code className="bg-white px-1 py-0.5 border">config.js</code>.
+            </p>
+          </div>
+        </div>
+      )}
+    </main>
+  </div>
 
       {/* EDIT ORDER MODAL DIALOG */}
       {editingOrder && (
@@ -1742,6 +2292,263 @@ export default function AdminDashboard() {
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* EDIT DISH MODAL DIALOG */}
+      {editingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 bg-[#6E1E2B] text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-display text-lg font-bold">Edit Dish: {editingProduct.name}</h3>
+                <p className="text-xs text-white/80">Update price, category, photo URL or recipe description</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingProduct(null)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveProductEdit} className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                  Dish / Platter Name <span className="text-[#6E1E2B]">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editingProduct.name || ""}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, name: e.target.value })}
+                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                    Category <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <select
+                    value={editingProduct.category || "Small Chops"}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  >
+                    <option value="Small Chops">Small Chops</option>
+                    <option value="Platters & Trays">Platters & Trays</option>
+                    <option value="Pastries & Desserts">Pastries & Desserts</option>
+                    <option value="Event Packages">Event Packages</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                    Price (₦ Naira) <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    value={editingProduct.price || ""}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, price: e.target.value })}
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                  Photo / Image URL
+                </label>
+                <input
+                  type="text"
+                  value={editingProduct.image || ""}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, image: e.target.value })}
+                  placeholder="Paste image URL (Unsplash or image file path)"
+                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                />
+                {editingProduct.image && (
+                  <div className="mt-2 w-20 h-20 rounded border border-[#E4DED2] overflow-hidden bg-white">
+                    <img src={editingProduct.image} alt="Preview" className="w-full h-full object-cover" />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                  Description / Ingredients
+                </label>
+                <textarea
+                  rows="3"
+                  value={editingProduct.description || ""}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, description: e.target.value })}
+                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="inStockCheck"
+                  checked={editingProduct.inStock ?? true}
+                  onChange={(e) => setEditingProduct({ ...editingProduct, inStock: e.target.checked })}
+                  className="w-4 h-4 text-[#6E1E2B] rounded focus:ring-0"
+                />
+                <label htmlFor="inStockCheck" className="text-xs font-semibold text-[#201D1B] cursor-pointer">
+                  This dish is currently In Stock and available for customers to order
+                </label>
+              </div>
+
+              <div className="pt-3 border-t border-[#E4DED2] flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setEditingProduct(null)}
+                  className="px-4 py-2 text-xs font-medium text-[#4A4642] hover:text-[#201D1B] border border-[#E4DED2] rounded-sm bg-white hover:bg-[#E4DED2]/40 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-[#6E1E2B] hover:bg-[#561722] rounded-sm shadow-sm transition-colors cursor-pointer"
+                >
+                  Save Dish Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ADD NEW DISH MODAL DIALOG */}
+      {isAddingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] w-full max-w-lg shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="px-6 py-4 bg-[#6E1E2B] text-white flex items-center justify-between">
+              <div>
+                <h3 className="font-display text-lg font-bold">+ Add New Dish to Menu</h3>
+                <p className="text-xs text-white/80">Create a new platter or package for your live customer catalog</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddingProduct(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateProduct} className="p-6 space-y-4 overflow-y-auto flex-1">
+              <div>
+                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                  Dish / Platter Name <span className="text-[#6E1E2B]">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Suya Peppered Gizzard Platter (50pc)"
+                  value={newProductForm.name}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, name: e.target.value })}
+                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                    Category <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <select
+                    value={newProductForm.category}
+                    onChange={(e) => setNewProductForm({ ...newProductForm, category: e.target.value })}
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  >
+                    <option value="Small Chops">Small Chops</option>
+                    <option value="Platters & Trays">Platters & Trays</option>
+                    <option value="Pastries & Desserts">Pastries & Desserts</option>
+                    <option value="Event Packages">Event Packages</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                    Price (₦ Naira) <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    placeholder="e.g. 35000"
+                    value={newProductForm.price}
+                    onChange={(e) => setNewProductForm({ ...newProductForm, price: e.target.value })}
+                    className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                  Photo / Image URL
+                </label>
+                <input
+                  type="text"
+                  placeholder="Paste image URL (or choose quick preset below)"
+                  value={newProductForm.image}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, image: e.target.value })}
+                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                />
+                <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                  <span className="text-[#888] self-center mr-1">Presets:</span>
+                  {[
+                    { label: "Jollof Tray", url: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80" },
+                    { label: "Grilled Fish", url: "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80" },
+                    { label: "Catering Event", url: "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&w=800&q=80" },
+                    { label: "Celebration Cake", url: "https://images.unsplash.com/photo-1535254973040-607b474cb50d?auto=format&fit=crop&w=800&q=80" },
+                  ].map((preset) => (
+                    <button
+                      type="button"
+                      key={preset.label}
+                      onClick={() => setNewProductForm({ ...newProductForm, image: preset.url })}
+                      className="px-2 py-0.5 rounded bg-white border border-[#E4DED2] hover:border-[#6E1E2B] text-[#4A4642] cursor-pointer"
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
+                  Description
+                </label>
+                <textarea
+                  rows="3"
+                  placeholder="Describe platter contents, piece count, pepper level, dip sauces..."
+                  value={newProductForm.description}
+                  onChange={(e) => setNewProductForm({ ...newProductForm, description: e.target.value })}
+                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-[#E4DED2] flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsAddingProduct(false)}
+                  className="px-4 py-2 text-xs font-medium text-[#4A4642] hover:text-[#201D1B] border border-[#E4DED2] rounded-sm bg-white hover:bg-[#E4DED2]/40 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-[#6E1E2B] hover:bg-[#561722] rounded-sm shadow-sm transition-colors cursor-pointer"
+                >
+                  Create Dish
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

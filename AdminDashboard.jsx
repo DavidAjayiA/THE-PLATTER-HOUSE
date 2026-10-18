@@ -964,12 +964,74 @@ export default function AdminDashboard() {
 
             <nav className="space-y-1">
               {[
-                { key: "orders", label: "Orders", count: counts.all, icon: "📦" },
-                { key: "products", label: "Menu Catalog", count: products.length, icon: "🍱" },
-                { key: "customers", label: "Customers", count: uniqueCustomers.length, icon: "👥" },
-                { key: "payments", label: "Payments (Paystack)", icon: "💳" },
-                { key: "analytics", label: "Sales Analytics", icon: "📈" },
-                { key: "settings", label: "Settings", icon: "⚙️" },
+                {
+                  key: "orders",
+                  label: "Orders",
+                  count: counts.all,
+                  icon: (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/>
+                      <path d="m3.3 7 8.7 5 8.7-5"/>
+                      <path d="M12 22V12"/>
+                    </svg>
+                  ),
+                },
+                {
+                  key: "products",
+                  label: "Menu Catalog",
+                  count: products.length,
+                  icon: (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="4" r="1.5" />
+                      <path d="M4 14a8 8 0 0 1 16 0" />
+                      <line x1="2" y1="17" x2="22" y2="17" strokeWidth="2" />
+                      <line x1="6" y1="20" x2="18" y2="20" />
+                    </svg>
+                  ),
+                },
+                {
+                  key: "customers",
+                  label: "Customers",
+                  count: uniqueCustomers.length,
+                  icon: (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/>
+                      <circle cx="9" cy="7" r="4"/>
+                      <path d="M22 21v-2a4 4 0 0 0-3-3.87"/>
+                      <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                  ),
+                },
+                {
+                  key: "payments",
+                  label: "Payments (Paystack)",
+                  icon: (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <rect width="20" height="14" x="2" y="5" rx="2"/>
+                      <line x1="2" x2="22" y1="10" y2="10"/>
+                    </svg>
+                  ),
+                },
+                {
+                  key: "analytics",
+                  label: "Sales Analytics",
+                  icon: (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M3 3v18h18"/>
+                      <path d="m19 9-5 5-4-4-3 3"/>
+                    </svg>
+                  ),
+                },
+                {
+                  key: "settings",
+                  label: "Settings",
+                  icon: (
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="3"/>
+                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                    </svg>
+                  ),
+                },
               ].map((item) => (
                 <button
                   key={item.key}
@@ -981,7 +1043,7 @@ export default function AdminDashboard() {
                   }`}
                 >
                   <div className="flex items-center gap-2.5">
-                    <span>{item.icon}</span>
+                    <span className="w-4 h-4 flex items-center justify-center flex-shrink-0 opacity-90">{item.icon}</span>
                     <span>{item.label}</span>
                   </div>
                   {item.count !== undefined && (
@@ -1445,14 +1507,21 @@ export default function AdminDashboard() {
           {/* Top Header & Quick Action Buttons */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#E4DED2]">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xl">🍱</span>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-[#6E1E2B]/10 border border-[#6E1E2B]/20 flex items-center justify-center text-[#6E1E2B] shadow-sm flex-shrink-0">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="4" r="1.5" />
+                    <path d="M4 14a8 8 0 0 1 16 0" />
+                    <line x1="2" y1="17" x2="22" y2="17" strokeWidth="2" />
+                    <line x1="6" y1="20" x2="18" y2="20" />
+                  </svg>
+                </div>
                 <h2 className="font-display text-2xl md:text-3xl font-bold text-[#201D1B]">
-                  Menu Catalog & Dish Studio
+                  Menu Catalogue
                 </h2>
               </div>
               <p className="text-xs sm:text-sm text-[#4A4642] mt-1">
-                Manage live menu prices, 1-click in-stock availability, catering trays, and photos.
+                Manage live menu prices, 1-click in-stock availability, catering trays, and dish photos.
               </p>
             </div>
 

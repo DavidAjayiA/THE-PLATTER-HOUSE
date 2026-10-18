@@ -164,6 +164,56 @@ function formatNaira(amount) {
   return `₦${(amount || 0).toLocaleString("en-NG")}`;
 }
 
+const DEFAULT_FOOD_FALLBACK = "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&w=800&q=80";
+
+// Compress & convert device/camera photo to web-optimized JPEG data URL (keeps storage < 120KB)
+function processDeviceImage(file, onSuccess, onError) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) {
+    if (onError) onError("Please select an image file (.jpg, .png, .webp)");
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const rawData = e.target.result;
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const MAX_DIM = 900;
+        let w = img.width;
+        let h = img.height;
+        if (w > h) {
+          if (w > MAX_DIM) {
+            h = Math.round((h * MAX_DIM) / w);
+            w = MAX_DIM;
+          }
+        } else {
+          if (h > MAX_DIM) {
+            w = Math.round((w * MAX_DIM) / h);
+            h = MAX_DIM;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL("image/jpeg", 0.84);
+        onSuccess(compressed);
+      } catch {
+        onSuccess(rawData);
+      }
+    };
+    img.onerror = () => onSuccess(rawData);
+    img.src = rawData;
+  };
+  reader.onerror = () => {
+    if (onError) onError("Could not read file from device.");
+  };
+  reader.readAsDataURL(file);
+}
+
 export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState("all"); // "all" | "pending" | "confirmed" | "preparing" | "out_for_delivery" | "delivered"
   const [searchQuery, setSearchQuery] = useState("");
@@ -493,9 +543,12 @@ export default function AdminDashboard() {
   const [menuActiveCategory, setMenuActiveCategory] = useState("All");
   const [editingProduct, setEditingProduct] = useState(null);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [imageUploadLoading, setImageUploadLoading] = useState(false);
+  const [editImageUploadLoading, setEditImageUploadLoading] = useState(false);
   const [newProductForm, setNewProductForm] = useState({
     name: "",
     category: "Small Chops",
+    customCategory: "",
     price: "",
     description: "",
     image: "",
@@ -542,12 +595,18 @@ export default function AdminDashboard() {
   function handleSaveProductEdit(e) {
     e.preventDefault();
     if (!editingProduct) return;
+
+    const finalCategory =
+      editingProduct.category === "__custom__"
+        ? (editingProduct.customCategory || "").trim() || "Special Platters"
+        : editingProduct.category;
+
     updateProduct(editingProduct.id, {
       name: (editingProduct.name || "").trim(),
-      category: (editingProduct.category || "Small Chops").trim(),
+      category: finalCategory,
       price: Number(editingProduct.price) || 0,
       description: (editingProduct.description || "").trim(),
-      image: (editingProduct.image || "").trim(),
+      image: (editingProduct.image || "").trim() || DEFAULT_FOOD_FALLBACK,
       inStock: editingProduct.inStock ?? true,
     });
     setEditingProduct(null);
@@ -560,20 +619,25 @@ export default function AdminDashboard() {
       showToast("Please enter dish name and price.");
       return;
     }
-    const defaultPlaceholder = "https://images.unsplash.com/photo-1555244162-803834f70033?auto=format&fit=crop&w=800&q=80";
+
+    const finalCategory =
+      newProductForm.category === "__custom__"
+        ? (newProductForm.customCategory || "").trim() || "Special Platters"
+        : newProductForm.category;
 
     const created = addProduct({
       name: newProductForm.name.trim(),
-      category: newProductForm.category || "Small Chops",
+      category: finalCategory,
       price: Number(newProductForm.price) || 0,
       description: (newProductForm.description || "").trim(),
-      image: (newProductForm.image || "").trim() || defaultPlaceholder,
+      image: (newProductForm.image || "").trim() || DEFAULT_FOOD_FALLBACK,
     });
 
     setIsAddingProduct(false);
     setNewProductForm({
       name: "",
       category: "Small Chops",
+      customCategory: "",
       price: "",
       description: "",
       image: "",
@@ -1503,6 +1567,9 @@ export default function AdminDashboard() {
                   <img
                     src={dish.image}
                     alt={dish.name}
+                    onError={(e) => {
+                      e.currentTarget.src = DEFAULT_FOOD_FALLBACK;
+                    }}
                     className={`w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 ${
                       !dish.inStock ? "grayscale opacity-75" : ""
                     }`}
@@ -2303,7 +2370,7 @@ export default function AdminDashboard() {
             <div className="px-6 py-4 bg-[#6E1E2B] text-white flex items-center justify-between">
               <div>
                 <h3 className="font-display text-lg font-bold">Edit Dish: {editingProduct.name}</h3>
-                <p className="text-xs text-white/80">Update price, category, photo URL or recipe description</p>
+                <p className="text-xs text-white/80">Update price, category, upload photo or edit description</p>
               </div>
               <button
                 type="button"
@@ -2314,7 +2381,7 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            <form onSubmit={handleSaveProductEdit} className="p-6 space-y-4 overflow-y-auto flex-1">
+            <form onSubmit={handleSaveProductEdit} className="p-6 space-y-4 overflow-y-auto flex-1 text-left">
               <div>
                 <label className="block text-xs font-semibold text-[#201D1B] mb-1">
                   Dish / Platter Name <span className="text-[#6E1E2B]">*</span>
@@ -2334,14 +2401,33 @@ export default function AdminDashboard() {
                     Category <span className="text-[#6E1E2B]">*</span>
                   </label>
                   <select
-                    value={editingProduct.category || "Small Chops"}
-                    onChange={(e) => setEditingProduct({ ...editingProduct, category: e.target.value })}
+                    value={
+                      categories.includes(editingProduct.category) && editingProduct.category !== "__custom__"
+                        ? editingProduct.category
+                        : "__custom__"
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "__custom__") {
+                        setEditingProduct({
+                          ...editingProduct,
+                          category: "__custom__",
+                          customCategory: editingProduct.customCategory || editingProduct.category || "",
+                        });
+                      } else {
+                        setEditingProduct({ ...editingProduct, category: val });
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
                   >
-                    <option value="Small Chops">Small Chops</option>
-                    <option value="Platters & Trays">Platters & Trays</option>
-                    <option value="Pastries & Desserts">Pastries & Desserts</option>
-                    <option value="Event Packages">Event Packages</option>
+                    {categories
+                      .filter((c) => c !== "All")
+                      .map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    <option value="__custom__">✨ + Enter Custom Category...</option>
                   </select>
                 </div>
 
@@ -2360,20 +2446,119 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
-                  Photo / Image URL
+              {/* Custom Category Input if selected */}
+              {(editingProduct.category === "__custom__" ||
+                (!categories.includes(editingProduct.category) && editingProduct.category !== "All")) && (
+                <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-sm animate-fade-in">
+                  <label className="block text-[11px] font-semibold text-[#8B6528] mb-1">
+                    Type Custom Category Name: <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Grills & Suya, Party Soups, Cocktails..."
+                    value={editingProduct.customCategory ?? editingProduct.category}
+                    onChange={(e) =>
+                      setEditingProduct({
+                        ...editingProduct,
+                        category: "__custom__",
+                        customCategory: e.target.value,
+                      })
+                    }
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-amber-300 rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+              )}
+
+              {/* Photo Upload Section */}
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-[#201D1B]">
+                  Dish Photo / Image
                 </label>
-                <input
-                  type="text"
-                  value={editingProduct.image || ""}
-                  onChange={(e) => setEditingProduct({ ...editingProduct, image: e.target.value })}
-                  placeholder="Paste image URL (Unsplash or image file path)"
-                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
-                />
+
+                {/* Primary Upload Button from Device */}
+                <div className="p-3 bg-white border border-dashed border-[#A9824F]/70 rounded-sm">
+                  <p className="text-xs font-medium text-[#201D1B] mb-1">
+                    📸 Choose Photo from Device / Gallery
+                  </p>
+                  <p className="text-[11px] text-[#4A4642] mb-2">
+                    Upload from your phone camera or laptop. Resized and stored automatically.
+                  </p>
+                  <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#6E1E2B] text-white text-xs font-semibold rounded-sm hover:bg-[#561722] cursor-pointer shadow-sm transition-colors">
+                    <span>📁 Browse Files / Gallery</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setEditImageUploadLoading(true);
+                          processDeviceImage(
+                            file,
+                            (dataUrl) => {
+                              setEditingProduct((prev) => ({ ...prev, image: dataUrl }));
+                              setEditImageUploadLoading(false);
+                              showToast("✓ Photo loaded from your device!");
+                            },
+                            (err) => {
+                              setEditImageUploadLoading(false);
+                              showToast(err);
+                            }
+                          );
+                        }
+                      }}
+                    />
+                  </label>
+                  {editImageUploadLoading && (
+                    <span className="text-xs text-[#A9824F] ml-3 animate-pulse">Processing image...</span>
+                  )}
+                </div>
+
+                {/* Or Web Image URL */}
+                <div>
+                  <p className="text-[11px] font-medium text-[#4A4642] mb-1">
+                    Or paste direct image URL:
+                  </p>
+                  <input
+                    type="text"
+                    value={editingProduct.image || ""}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, image: e.target.value })}
+                    placeholder="https://... direct image link"
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+
+                {/* Live Preview Box */}
                 {editingProduct.image && (
-                  <div className="mt-2 w-20 h-20 rounded border border-[#E4DED2] overflow-hidden bg-white">
-                    <img src={editingProduct.image} alt="Preview" className="w-full h-full object-cover" />
+                  <div className="p-2.5 bg-white rounded border border-[#E4DED2] flex items-center justify-between gap-3 animate-fade-in">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-14 h-14 rounded overflow-hidden bg-[#E4DED2] flex-shrink-0 border border-[#E4DED2]">
+                        <img
+                          src={editingProduct.image}
+                          alt="Dish preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.src = DEFAULT_FOOD_FALLBACK;
+                          }}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-emerald-800">✓ Image Preview Active</p>
+                        <p className="text-[10px] text-[#888] truncate max-w-xs">
+                          {editingProduct.image.startsWith("data:")
+                            ? "Device Uploaded Photo"
+                            : editingProduct.image}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditingProduct((prev) => ({ ...prev, image: "" }))}
+                      className="text-xs text-red-600 hover:text-red-800 px-2 py-1 rounded border border-red-200 bg-red-50 hover:bg-red-100 cursor-pointer font-medium"
+                    >
+                      ✕ Remove
+                    </button>
                   </div>
                 )}
               </div>
@@ -2396,7 +2581,7 @@ export default function AdminDashboard() {
                   id="inStockCheck"
                   checked={editingProduct.inStock ?? true}
                   onChange={(e) => setEditingProduct({ ...editingProduct, inStock: e.target.checked })}
-                  className="w-4 h-4 text-[#6E1E2B] rounded focus:ring-0"
+                  className="w-4 h-4 text-[#6E1E2B] rounded focus:ring-0 cursor-pointer"
                 />
                 <label htmlFor="inStockCheck" className="text-xs font-semibold text-[#201D1B] cursor-pointer">
                   This dish is currently In Stock and available for customers to order
@@ -2430,7 +2615,7 @@ export default function AdminDashboard() {
             <div className="px-6 py-4 bg-[#6E1E2B] text-white flex items-center justify-between">
               <div>
                 <h3 className="font-display text-lg font-bold">+ Add New Dish to Menu</h3>
-                <p className="text-xs text-white/80">Create a new platter or package for your live customer catalog</p>
+                <p className="text-xs text-white/80">Upload photos directly or pick custom categories for your catalog</p>
               </div>
               <button
                 type="button"
@@ -2441,7 +2626,7 @@ export default function AdminDashboard() {
               </button>
             </div>
 
-            <form onSubmit={handleCreateProduct} className="p-6 space-y-4 overflow-y-auto flex-1">
+            <form onSubmit={handleCreateProduct} className="p-6 space-y-4 overflow-y-auto flex-1 text-left">
               <div>
                 <label className="block text-xs font-semibold text-[#201D1B] mb-1">
                   Dish / Platter Name <span className="text-[#6E1E2B]">*</span>
@@ -2466,10 +2651,14 @@ export default function AdminDashboard() {
                     onChange={(e) => setNewProductForm({ ...newProductForm, category: e.target.value })}
                     className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
                   >
-                    <option value="Small Chops">Small Chops</option>
-                    <option value="Platters & Trays">Platters & Trays</option>
-                    <option value="Pastries & Desserts">Pastries & Desserts</option>
-                    <option value="Event Packages">Event Packages</option>
+                    {categories
+                      .filter((c) => c !== "All")
+                      .map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    <option value="__custom__">✨ + Enter Custom Category...</option>
                   </select>
                 </div>
 
@@ -2489,19 +2678,88 @@ export default function AdminDashboard() {
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-[#201D1B] mb-1">
-                  Photo / Image URL
+              {/* Custom Category Input if selected */}
+              {newProductForm.category === "__custom__" && (
+                <div className="p-2.5 bg-amber-50/70 border border-amber-200 rounded-sm animate-fade-in">
+                  <label className="block text-[11px] font-semibold text-[#8B6528] mb-1">
+                    Type Custom Category Name: <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Grills & Suya, Party Soups, Cocktails..."
+                    value={newProductForm.customCategory}
+                    onChange={(e) => setNewProductForm({ ...newProductForm, customCategory: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-amber-300 rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+              )}
+
+              {/* Photo Upload Section */}
+              <div className="space-y-2">
+                <label className="block text-xs font-semibold text-[#201D1B]">
+                  Dish Photo / Image
                 </label>
-                <input
-                  type="text"
-                  placeholder="Paste image URL (or choose quick preset below)"
-                  value={newProductForm.image}
-                  onChange={(e) => setNewProductForm({ ...newProductForm, image: e.target.value })}
-                  className="w-full px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
-                />
-                <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
-                  <span className="text-[#888] self-center mr-1">Presets:</span>
+
+                {/* Primary Upload Button from Device */}
+                <div className="p-3 bg-white border border-dashed border-[#A9824F]/70 rounded-sm">
+                  <p className="text-xs font-medium text-[#201D1B] mb-1">
+                    📸 Choose Photo from Device / Gallery (Recommended)
+                  </p>
+                  <p className="text-[11px] text-[#4A4642] mb-2">
+                    Pick any picture from your phone or laptop. Automatically resized for fast loading.
+                  </p>
+                  <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-[#6E1E2B] text-white text-xs font-semibold rounded-sm hover:bg-[#561722] cursor-pointer shadow-sm transition-colors">
+                    <span>📁 Browse Files / Gallery</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setImageUploadLoading(true);
+                          processDeviceImage(
+                            file,
+                            (dataUrl) => {
+                              setNewProductForm((prev) => ({ ...prev, image: dataUrl }));
+                              setImageUploadLoading(false);
+                              showToast("✓ Photo loaded from your device!");
+                            },
+                            (err) => {
+                              setImageUploadLoading(false);
+                              showToast(err);
+                            }
+                          );
+                        }
+                      }}
+                    />
+                  </label>
+                  {imageUploadLoading && (
+                    <span className="text-xs text-[#A9824F] ml-3 animate-pulse">Processing image...</span>
+                  )}
+                </div>
+
+                {/* Or Web Image URL */}
+                <div>
+                  <p className="text-[11px] font-medium text-[#4A4642] mb-1">
+                    Or paste direct image URL:
+                  </p>
+                  <input
+                    type="text"
+                    placeholder="https://... direct image link"
+                    value={newProductForm.image}
+                    onChange={(e) => setNewProductForm({ ...newProductForm, image: e.target.value })}
+                    className="w-full px-3 py-1.5 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                  <p className="text-[10px] text-[#888] mt-0.5">
+                    Note: Some websites block external image copying. If a link fails, use the "Upload Photo" button above!
+                  </p>
+                </div>
+
+                {/* Optional Presets */}
+                <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+                  <span className="text-[#888] text-[10px]">Sample presets:</span>
                   {[
                     { label: "Jollof Tray", url: "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=800&q=80" },
                     { label: "Grilled Fish", url: "https://images.unsplash.com/photo-1519708227418-c8fd9a32b7a2?auto=format&fit=crop&w=800&q=80" },
@@ -2511,13 +2769,46 @@ export default function AdminDashboard() {
                     <button
                       type="button"
                       key={preset.label}
-                      onClick={() => setNewProductForm({ ...newProductForm, image: preset.url })}
-                      className="px-2 py-0.5 rounded bg-white border border-[#E4DED2] hover:border-[#6E1E2B] text-[#4A4642] cursor-pointer"
+                      onClick={() => setNewProductForm((prev) => ({ ...prev, image: preset.url }))}
+                      className="px-2 py-0.5 rounded bg-white border border-[#E4DED2] hover:border-[#6E1E2B] text-[#4A4642] text-[10px] cursor-pointer"
                     >
                       {preset.label}
                     </button>
                   ))}
                 </div>
+
+                {/* Live Preview Box */}
+                {newProductForm.image && (
+                  <div className="p-2.5 bg-white rounded border border-[#E4DED2] flex items-center justify-between gap-3 animate-fade-in">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-14 h-14 rounded overflow-hidden bg-[#E4DED2] flex-shrink-0 border border-[#E4DED2]">
+                        <img
+                          src={newProductForm.image}
+                          alt="Dish preview"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.src = DEFAULT_FOOD_FALLBACK;
+                          }}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-emerald-800">✓ Image Preview Active</p>
+                        <p className="text-[10px] text-[#888] truncate max-w-xs">
+                          {newProductForm.image.startsWith("data:")
+                            ? "Device Uploaded Photo"
+                            : newProductForm.image}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setNewProductForm((prev) => ({ ...prev, image: "" }))}
+                      className="text-xs text-red-600 hover:text-red-800 px-2 py-1 rounded border border-red-200 bg-red-50 hover:bg-red-100 cursor-pointer font-medium"
+                    >
+                      ✕ Remove
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div>

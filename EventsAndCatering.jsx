@@ -121,14 +121,24 @@ export default function EventsAndCateringPage() {
             </a>
           </nav>
 
-          <button
-            className="md:hidden text-sm"
-            onClick={() => setMenuOpen(!menuOpen)}
-            aria-label="Toggle menu"
-            aria-expanded={menuOpen}
-          >
-            {menuOpen ? "Close" : "Menu"}
-          </button>
+          <div className="flex items-center gap-3 md:hidden">
+            <a
+              href="#cart"
+              className="text-xs px-3 py-1.5 rounded-full font-medium shadow-sm transition-all text-white flex items-center gap-1.5"
+              style={{ backgroundColor: "#6E1E2B" }}
+            >
+              <span>🛒</span>
+              <span>Cart ({cartCount})</span>
+            </a>
+            <button
+              className="text-sm font-medium py-1 px-2 rounded hover:bg-black/5"
+              onClick={() => setMenuOpen(!menuOpen)}
+              aria-label="Toggle menu"
+              aria-expanded={menuOpen}
+            >
+              {menuOpen ? "Close" : "Menu"}
+            </button>
+          </div>
         </div>
 
         {menuOpen && (

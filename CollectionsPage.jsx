@@ -169,14 +169,30 @@ export default function CollectionsPage() {
             </a>
           </nav>
 
-          <button
-            className="md:hidden text-sm"
-            onClick={() => setMenuOpen(!menuOpen)}
-            aria-label="Toggle menu"
-            aria-expanded={menuOpen}
-          >
-            {menuOpen ? "Close" : "Menu"}
-          </button>
+          {/* Mobile Right Bar (Cart + Hamburger) */}
+          <div className="flex items-center gap-2.5 md:hidden">
+            <a
+              href="#cart"
+              className="relative flex items-center gap-1.5 px-3 py-1.5 rounded-sm text-white text-xs font-semibold shadow-sm active:scale-95 transition-transform"
+              style={{ backgroundColor: "#6E1E2B" }}
+              title="View Cart"
+            >
+              <span>🛒</span>
+              <span>Cart</span>
+              <span className="bg-white text-[#6E1E2B] font-bold rounded-full px-1.5 py-0.2 text-[10px] min-w-[18px] text-center shadow-inner">
+                {cartCount}
+              </span>
+            </a>
+
+            <button
+              className="px-2.5 py-1.5 text-xs border border-[#E4DED2] rounded-sm bg-white text-[#201D1B] font-medium"
+              onClick={() => setMenuOpen(!menuOpen)}
+              aria-label="Toggle menu"
+              aria-expanded={menuOpen}
+            >
+              {menuOpen ? "✕" : "☰ Menu"}
+            </button>
+          </div>
         </div>
 
         {menuOpen && (
@@ -186,7 +202,9 @@ export default function CollectionsPage() {
                 {link.label}
               </a>
             ))}
-            <a href="#cart" className="text-sm pt-2">Cart ({cartCount})</a>
+            <a href="#cart" className="text-sm pt-2 font-semibold text-[#6E1E2B]">
+              🛒 View Cart ({cartCount} items)
+            </a>
           </div>
         )}
       </header>

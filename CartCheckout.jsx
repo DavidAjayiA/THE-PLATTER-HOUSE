@@ -8,6 +8,7 @@ import {
   PAYSTACK_PUBLIC_KEY,
   BANK_DETAILS,
 } from "./config.js";
+import { createSupabaseOrder } from "./supabaseClient.js";
 
 import assortedSmallChopsImg from "./IMG/assorted small chops.jpg";
 import smallChops100Img from "./IMG/small chops assorted.jpg";
@@ -202,6 +203,25 @@ export default function CartCheckoutPage() {
     saveOrder(newOrder);
     setPlacedOrder(newOrder);
 
+    // Sync to Supabase cloud database
+    createSupabaseOrder({
+      orderNumber: newOrder.orderNumber,
+      customerName: newOrder.customerName,
+      phone: newOrder.phone,
+      email: newOrder.email,
+      fulfillmentType: newOrder.fulfillment,
+      address: newOrder.address,
+      preferredDate: newOrder.preferredDate,
+      notes: newOrder.notes,
+      items: newOrder.items,
+      subtotal: newOrder.subtotal,
+      deliveryFee: newOrder.deliveryFee,
+      totalAmount: newOrder.total,
+      paymentMethod: "Pending",
+      paymentStatus: "unpaid",
+      orderStatus: "pending",
+    }).catch(() => {});
+
     // Keep cart items safely in state/storage until payment is actually verified!
 
     setTimeout(() => {
@@ -314,6 +334,26 @@ export default function CartCheckoutPage() {
 
     setPlacedOrder(paidOrder);
     updateOrderStatus(paidOrder.orderNumber, paidOrder);
+
+    // Sync paid order to Supabase cloud database
+    createSupabaseOrder({
+      orderNumber: paidOrder.orderNumber,
+      customerName: paidOrder.customerName,
+      phone: paidOrder.phone,
+      email: paidOrder.email,
+      fulfillmentType: paidOrder.fulfillment,
+      address: paidOrder.address,
+      preferredDate: paidOrder.preferredDate,
+      notes: paidOrder.notes,
+      items: paidOrder.items,
+      subtotal: paidOrder.subtotal,
+      deliveryFee: paidOrder.deliveryFee,
+      totalAmount: paidOrder.total,
+      paymentMethod: methodLabel,
+      paymentStatus: "paid",
+      paymentReference: paymentRef,
+      orderStatus: "confirmed",
+    }).catch(() => {});
     clearCart(); // Cleanly empty the cart now that payment is approved
     try {
       sessionStorage.removeItem("tph_checkout_form");

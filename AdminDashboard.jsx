@@ -2,6 +2,11 @@ import { useState, useEffect, useMemo } from "react";
 import { STORE_NAME, BUSINESS_EMAIL, BUSINESS_WHATSAPP_PHONE, ADMIN_PIN } from "./config.js";
 import brandLogo from "./IMG/the_platter_house_hq.jpg";
 import { useMenu } from "./MenuContext.jsx";
+import {
+  fetchSupabaseOrders,
+  updateSupabaseOrderStatus,
+  subscribeToSupabaseOrders,
+} from "./supabaseClient.js";
 
 const FONT_IMPORT = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Work+Sans:wght@400;500;600;700&display=swap');
@@ -333,29 +338,80 @@ export default function AdminDashboard() {
     };
   }, []);
 
-  // Load orders from localStorage or seed
+  // Load orders from localStorage, then fetch & subscribe to Supabase
   useEffect(() => {
+    let isMounted = true;
+
+    // 1. Instant local render
     try {
       const stored = JSON.parse(localStorage.getItem("tph_orders") || "[]");
       if (stored.length > 0) {
-        // Merge stored with seed orders (deduplicating by orderNumber)
-        const combined = [...stored];
-        INITIAL_SEED_ORDERS.forEach((seed) => {
-          if (!combined.some((o) => o.orderNumber === seed.orderNumber)) {
-            combined.push(seed);
-          }
-        });
-        setOrders(combined);
-        setSelectedOrder(combined[0]);
+        setOrders(stored);
+        setSelectedOrder(stored[0]);
       } else {
         setOrders(INITIAL_SEED_ORDERS);
         setSelectedOrder(INITIAL_SEED_ORDERS[0]);
-        localStorage.setItem("tph_orders", JSON.stringify(INITIAL_SEED_ORDERS));
       }
     } catch {
       setOrders(INITIAL_SEED_ORDERS);
-      setSelectedOrder(INITIAL_SEED_ORDERS[0]);
     }
+
+    // 2. Fetch fresh live orders from Supabase cloud database
+    fetchSupabaseOrders()
+      .then((cloudOrders) => {
+        if (!isMounted) return;
+        if (cloudOrders && cloudOrders.length > 0) {
+          setOrders((prev) => {
+            const map = new Map();
+            cloudOrders.forEach((o) => map.set(o.orderNumber, o));
+            prev.forEach((o) => {
+              if (!map.has(o.orderNumber)) map.set(o.orderNumber, o);
+            });
+            const merged = Array.from(map.values());
+            try {
+              localStorage.setItem("tph_orders", JSON.stringify(merged));
+            } catch {}
+            return merged;
+          });
+        }
+      })
+      .catch((err) => console.warn("Supabase orders fetch:", err));
+
+    // 3. Realtime subscription: live incoming orders and status updates
+    const unsubscribe = subscribeToSupabaseOrders(({ eventType, order }) => {
+      if (!isMounted) return;
+      setOrders((prev) => {
+        let next;
+        if (eventType === "INSERT") {
+          showToast(`🔔 New Order Received: #${order.orderNumber}!`);
+          const newNotif = {
+            id: Date.now(),
+            title: `🔔 New Paid Order #${order.orderNumber}`,
+            desc: `${order.customerName} ordered ${order.items?.length || 0} dishes (Total: ₦${Number(order.totalAmount || 0).toLocaleString()})`,
+            time: "Just now",
+            unread: true,
+            orderNumber: order.orderNumber,
+          };
+          setNotifications((n) => [newNotif, ...n]);
+          next = [order, ...prev.filter((o) => o.orderNumber !== order.orderNumber)];
+        } else if (eventType === "UPDATE") {
+          next = prev.map((o) => (o.orderNumber === order.orderNumber ? { ...o, ...order } : o));
+        } else if (eventType === "DELETE") {
+          next = prev.filter((o) => o.orderNumber !== order.orderNumber);
+        } else {
+          next = prev;
+        }
+        try {
+          localStorage.setItem("tph_orders", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    });
+
+    return () => {
+      isMounted = false;
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
   }, []);
 
   function showToast(msg) {
@@ -363,7 +419,7 @@ export default function AdminDashboard() {
     setTimeout(() => setToastMessage(null), 2500);
   }
 
-  // Update order status and synchronize to localStorage
+  // Update order status and synchronize to localStorage & Supabase
   function updateStatus(orderNumber, newStageIndex, newStatusLabel) {
     const updated = orders.map((o) => {
       if (o.orderNumber === orderNumber) {
@@ -389,6 +445,11 @@ export default function AdminDashboard() {
     } catch (e) {
       console.error(e);
     }
+
+    // Sync status change to Supabase cloud database
+    const STAGE_KEYS = ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"];
+    const stageKey = STAGE_KEYS[newStageIndex] || "confirmed";
+    updateSupabaseOrderStatus(orderNumber, stageKey).catch(() => {});
 
     // Add notification
     const newNotif = {
@@ -443,6 +504,9 @@ export default function AdminDashboard() {
     } catch (e) {
       console.error(e);
     }
+
+    // Sync to Supabase cloud database
+    updateSupabaseOrderStatus(orderNumber, "confirmed").catch(() => {});
 
     // Add Live Notification to vendor stream
     const newNotif = {
@@ -1747,8 +1811,8 @@ export default function AdminDashboard() {
       {sidebarTab === "customers" && (
         <div className="space-y-6 animate-fade-in">
           <div className="pb-4 border-b border-[#E4DED2]">
-            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Customer Directory & CRM</h2>
-            <p className="text-xs text-[#4A4642] mt-0.5">Direct contacts, order history, and 1-click WhatsApp customer care</p>
+            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Customer Database</h2>
+            <p className="text-xs text-[#4A4642] mt-0.5">Customer details, order history, and 1-click WhatsApp customer care</p>
           </div>
 
           <div className="bg-[#FBF9F5] rounded-sm border border-[#E4DED2] overflow-x-auto shadow-sm">
@@ -1797,7 +1861,7 @@ export default function AdminDashboard() {
       {sidebarTab === "payments" && (
         <div className="space-y-6 animate-fade-in">
           <div className="pb-4 border-b border-[#E4DED2]">
-            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Payments & Settlement Ledger</h2>
+            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Payments</h2>
             <p className="text-xs text-[#4A4642] mt-0.5">Paystack webhook logs, direct bank transfers, and verification status</p>
           </div>
 
@@ -1856,8 +1920,8 @@ export default function AdminDashboard() {
       {sidebarTab === "analytics" && (
         <div className="space-y-6 animate-fade-in">
           <div className="pb-4 border-b border-[#E4DED2]">
-            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Sales Analytics & Operations</h2>
-            <p className="text-xs text-[#4A4642] mt-0.5">High-level financial summaries, average order size, and kitchen performance</p>
+            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Sales Analytics</h2>
+            <p className="text-xs text-[#4A4642] mt-0.5">Summary of financials, average order size, and kitchen performance</p>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
@@ -1890,7 +1954,7 @@ export default function AdminDashboard() {
       {sidebarTab === "settings" && (
         <div className="space-y-6 animate-fade-in max-w-3xl">
           <div className="pb-4 border-b border-[#E4DED2]">
-            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Store & Vendor Settings</h2>
+            <h2 className="font-display text-2xl font-bold text-[#201D1B]">Admin Settings</h2>
             <p className="text-xs text-[#4A4642] mt-0.5">Operational configuration, payment accounts, and security preferences</p>
           </div>
 

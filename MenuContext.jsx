@@ -1,4 +1,10 @@
 import { createContext, useContext, useState, useEffect, useMemo } from "react";
+import {
+  fetchSupabaseProducts,
+  upsertSupabaseProduct,
+  deleteSupabaseProduct,
+  subscribeToSupabaseProducts,
+} from "./supabaseClient.js";
 
 // Image Imports matching the initial shop catalog
 import springRollSamosaImg from "./IMG/spring roll & samosa.jpg";
@@ -166,6 +172,41 @@ export function MenuProvider({ children }) {
     return INITIAL_PRODUCTS;
   });
 
+  // Initial load from Supabase & Realtime subscription
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchSupabaseProducts()
+      .then((cloudProducts) => {
+        if (!isMounted) return;
+        if (cloudProducts && cloudProducts.length > 0) {
+          setProducts(cloudProducts);
+        } else if (cloudProducts && cloudProducts.length === 0) {
+          // Cloud table is fresh and empty: seed initial starter products to Supabase!
+          INITIAL_PRODUCTS.forEach((prod) => {
+            upsertSupabaseProduct(prod).catch(() => {});
+          });
+        }
+      })
+      .catch((err) => console.warn("Supabase products fetch:", err));
+
+    const unsubscribe = subscribeToSupabaseProducts(({ eventType, product, deletedId }) => {
+      if (!isMounted) return;
+      if (eventType === "INSERT" && product) {
+        setProducts((prev) => [product, ...prev.filter((p) => p.id !== product.id)]);
+      } else if (eventType === "UPDATE" && product) {
+        setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, ...product } : p)));
+      } else if (eventType === "DELETE" && deletedId) {
+        setProducts((prev) => prev.filter((p) => p.id !== deletedId));
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, []);
+
   // Sync products to localStorage on any modification
   useEffect(() => {
     try {
@@ -177,20 +218,30 @@ export function MenuProvider({ children }) {
 
   // Toggle in-stock status (instantly updates customer store)
   const toggleStock = (productId) => {
-    setProducts((prev) =>
-      prev.map((item) =>
+    setProducts((prev) => {
+      const next = prev.map((item) =>
         item.id === productId ? { ...item, inStock: !item.inStock } : item
-      )
-    );
+      );
+      const updated = next.find((p) => p.id === productId);
+      if (updated) {
+        upsertSupabaseProduct(updated).catch(() => {});
+      }
+      return next;
+    });
   };
 
   // Edit existing product (price, name, category, description, image)
   const updateProduct = (productId, updatedFields) => {
-    setProducts((prev) =>
-      prev.map((item) =>
+    setProducts((prev) => {
+      const next = prev.map((item) =>
         item.id === productId ? { ...item, ...updatedFields } : item
-      )
-    );
+      );
+      const updated = next.find((p) => p.id === productId);
+      if (updated) {
+        upsertSupabaseProduct(updated).catch(() => {});
+      }
+      return next;
+    });
   };
 
   // Add brand new platter/dish to catalog
@@ -203,12 +254,14 @@ export function MenuProvider({ children }) {
       price: Number(newProduct.price) || 0,
     };
     setProducts((prev) => [itemToAdd, ...prev]);
+    upsertSupabaseProduct(itemToAdd).catch(() => {});
     return itemToAdd;
   };
 
   // Delete product permanently from catalog
   const deleteProduct = (productId) => {
     setProducts((prev) => prev.filter((item) => item.id !== productId));
+    deleteSupabaseProduct(productId).catch(() => {});
   };
 
   // Reset to original default factory catalog
@@ -217,6 +270,9 @@ export function MenuProvider({ children }) {
     try {
       localStorage.setItem("tph_menu_items", JSON.stringify(INITIAL_PRODUCTS));
     } catch {}
+    INITIAL_PRODUCTS.forEach((prod) => {
+      upsertSupabaseProduct(prod).catch(() => {});
+    });
   };
 
   // Available categories list

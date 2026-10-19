@@ -1,6 +1,10 @@
 import { useState, useEffect } from "react";
 import { useCart } from "./CartContext.jsx";
 import brandLogo from "./IMG/the_platter_house_hq.jpg";
+import {
+  fetchSupabaseOrderByNumber,
+  subscribeToSupabaseOrders,
+} from "./supabaseClient.js";
 
 const FONT_IMPORT = `
   @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Work+Sans:wght@400;500;600&display=swap');
@@ -68,43 +72,69 @@ export default function TrackOrderPage() {
     }
   }, [lastOrder]);
 
-  function handleTrack(e) {
-    e.preventDefault();
+  // Real-time live tracking updates from Supabase
+  useEffect(() => {
+    if (!activeOrder?.orderNumber) return;
+    const unsubscribe = subscribeToSupabaseOrders(({ order }) => {
+      if (order && order.orderNumber === activeOrder.orderNumber) {
+        setActiveOrder((prev) => ({ ...prev, ...order }));
+      }
+    });
+    return () => {
+      if (typeof unsubscribe === "function") unsubscribe();
+    };
+  }, [activeOrder?.orderNumber]);
+
+  async function handleTrack(e) {
+    if (e) e.preventDefault();
     if (!orderNumber.trim()) return;
     setStatus("loading");
 
-    setTimeout(() => {
-      const inputNum = orderNumber.trim().toUpperCase();
-      const inputEmail = email.trim().toLowerCase();
+    const inputNum = orderNumber.trim().toUpperCase();
+    const inputEmail = email.trim().toLowerCase();
 
-      let savedOrders = [];
-      try {
-        savedOrders = JSON.parse(localStorage.getItem("tph_orders") || "[]");
-        const localLast = JSON.parse(localStorage.getItem("tph_last_order") || "null");
-        if (localLast && !savedOrders.some((o) => o.orderNumber === localLast.orderNumber)) {
-          savedOrders.unshift(localLast);
+    // 1. Try Supabase cloud database first (for multi-device tracking)
+    try {
+      const cloudOrder = await fetchSupabaseOrderByNumber(inputNum);
+      if (cloudOrder) {
+        if (!inputEmail || (cloudOrder.email && cloudOrder.email.toLowerCase() === inputEmail)) {
+          setActiveOrder(cloudOrder);
+          setStatus("found");
+          return;
         }
-      } catch {
-        savedOrders = [];
       }
+    } catch (err) {
+      console.warn("Supabase track error:", err);
+    }
 
-      const match = savedOrders.find(
-        (o) =>
-          o.orderNumber.toUpperCase() === inputNum &&
-          (!inputEmail || (o.email && o.email.toLowerCase() === inputEmail))
-      );
-
-      if (match) {
-        setActiveOrder(match);
-        setStatus("found");
-      } else if (inputNum === SAMPLE_ORDER.orderNumber) {
-        setActiveOrder(SAMPLE_ORDER);
-        setStatus("found");
-      } else {
-        setActiveOrder(null);
-        setStatus("not_found");
+    // 2. Fall back to localStorage (for offline/demo devices)
+    let savedOrders = [];
+    try {
+      savedOrders = JSON.parse(localStorage.getItem("tph_orders") || "[]");
+      const localLast = JSON.parse(localStorage.getItem("tph_last_order") || "null");
+      if (localLast && !savedOrders.some((o) => o.orderNumber === localLast.orderNumber)) {
+        savedOrders.unshift(localLast);
       }
-    }, 600);
+    } catch {
+      savedOrders = [];
+    }
+
+    const match = savedOrders.find(
+      (o) =>
+        o.orderNumber.toUpperCase() === inputNum &&
+        (!inputEmail || (o.email && o.email.toLowerCase() === inputEmail))
+    );
+
+    if (match) {
+      setActiveOrder(match);
+      setStatus("found");
+    } else if (inputNum === SAMPLE_ORDER.orderNumber) {
+      setActiveOrder(SAMPLE_ORDER);
+      setStatus("found");
+    } else {
+      setActiveOrder(null);
+      setStatus("not_found");
+    }
   }
 
   return (
@@ -234,7 +264,15 @@ export default function TrackOrderPage() {
           <div className="p-8" style={{ backgroundColor: "#FBF9F5", border: "1px solid #E4DED2" }}>
             {(() => {
               const currentOrder = activeOrder || SAMPLE_ORDER;
-              const currentStage = currentOrder.currentStageIndex ?? 1;
+              let currentStage = 0;
+              if (currentOrder.orderStatus) {
+                if (currentOrder.orderStatus === "delivered") currentStage = 3;
+                else if (currentOrder.orderStatus === "out_for_delivery") currentStage = 2;
+                else if (currentOrder.orderStatus === "preparing") currentStage = 1;
+                else currentStage = 0;
+              } else if (currentOrder.currentStageIndex !== undefined) {
+                currentStage = Math.max(0, Math.min(3, currentOrder.currentStageIndex === 0 ? 0 : currentOrder.currentStageIndex - 1));
+              }
               return (
                 <>
                   <div className="flex flex-wrap justify-between items-baseline gap-2 mb-8">

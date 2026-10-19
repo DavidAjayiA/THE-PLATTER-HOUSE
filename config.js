@@ -40,4 +40,9 @@ export const BANK_DETAILS = {
 // Vendor Security Access PIN (Change this anytime to your private code)
 export const ADMIN_PIN = "1234";
 
+// Supabase Cloud Database Configuration (Multi-device live sync)
+export const SUPABASE_URL = "https://owrblegiqxyhjxzwjbwa.supabase.co";
+export const SUPABASE_ANON_KEY = "sb_publishable_zXd_eK_mjwsyhWw5z-YgyA_l0DXos9K";
+
+
 

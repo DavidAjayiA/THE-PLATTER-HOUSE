@@ -132,6 +132,63 @@ export default function CartCheckoutPage() {
   const [toastMessage, setToastMessage] = useState(null);
   const [copiedBank, setCopiedBank] = useState(false);
 
+  // Manual Bank Transfer Receipt Upload States
+  const [receiptFile, setReceiptFile] = useState(null);
+  const [receiptDataUrl, setReceiptDataUrl] = useState(null);
+  const [receiptUploading, setReceiptUploading] = useState(false);
+  const [transferSenderName, setTransferSenderName] = useState("");
+  const [receiptError, setReceiptError] = useState(null);
+
+  // Compress & convert receipt screenshot to lightweight web-optimized JPEG data URL
+  function processDeviceReceipt(file, onSuccess, onError) {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      if (onError) onError("Please upload an image file (PNG, JPG, JPEG, WEBP)");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const rawData = e.target.result;
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const MAX_DIM = 900;
+          let w = img.width;
+          let h = img.height;
+          if (w > h) {
+            if (w > MAX_DIM) {
+              h = Math.round((h * MAX_DIM) / w);
+              w = MAX_DIM;
+            }
+          } else {
+            if (h > MAX_DIM) {
+              w = Math.round((w * MAX_DIM) / h);
+              h = MAX_DIM;
+            }
+          }
+          const canvas = document.createElement("canvas");
+          canvas.width = w;
+          canvas.height = h;
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL("image/jpeg", 0.82);
+          onSuccess(compressed);
+        } catch {
+          onSuccess(rawData);
+        }
+      };
+      img.onerror = () => {
+        if (onError) onError("Could not read image. Please select another screenshot.");
+      };
+      img.src = rawData;
+    };
+    reader.onerror = () => {
+      if (onError) onError("Failed to read file.");
+    };
+    reader.readAsDataURL(file);
+  }
+
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.qty, 0), [cart]);
   const deliveryFee = fulfillment === "delivery" ? DELIVERY_FEE : 0;
   const total = subtotal + deliveryFee;
@@ -495,19 +552,26 @@ export default function CartCheckoutPage() {
     }, 600);
   }
 
-  // Manual GTBank Transfer Confirmation
-  function handleManualTransferConfirm() {
+  // Manual GTBank Transfer Confirmation (Direct Receipt Upload OR WhatsApp)
+  function handleManualTransferConfirm({ withReceipt = false, viaWhatsApp = false } = {}) {
     if (!placedOrder) return;
     setPaying(true);
 
     const manualRef = `GTB_TRF_${placedOrder.orderNumber}`;
+    const methodLabel = withReceipt
+      ? "Direct GTBank Transfer (Receipt Uploaded)"
+      : "Direct GTBank Transfer (Proof on WhatsApp)";
+
     const manualOrder = {
       ...placedOrder,
       status: "Pending Transfer Verification",
       paymentStatus: "Pending Transfer",
       isPaid: false,
       paymentReference: manualRef,
-      paymentMethod: "Direct GTBank Transfer (Proof on WhatsApp)",
+      paymentMethod: methodLabel,
+      receiptImage: withReceipt ? receiptDataUrl : null,
+      senderAccountName: transferSenderName.trim() || placedOrder.customerName,
+      receiptAttached: withReceipt,
       currentStageIndex: 0,
       paidAt: new Date().toLocaleDateString("en-GB", {
         day: "numeric",
@@ -520,6 +584,29 @@ export default function CartCheckoutPage() {
 
     setPlacedOrder(manualOrder);
     updateOrderStatus(manualOrder.orderNumber, manualOrder);
+
+    // Sync to Supabase cloud database
+    createSupabaseOrder({
+      orderNumber: manualOrder.orderNumber,
+      customerName: manualOrder.customerName,
+      phone: manualOrder.phone,
+      email: manualOrder.email,
+      fulfillmentType: manualOrder.fulfillment,
+      address: manualOrder.address,
+      preferredDate: manualOrder.preferredDate,
+      notes: manualOrder.notes,
+      items: manualOrder.items,
+      subtotal: manualOrder.subtotal,
+      deliveryFee: manualOrder.deliveryFee,
+      totalAmount: manualOrder.total,
+      paymentMethod: methodLabel,
+      paymentStatus: "pending_transfer",
+      paymentReference: manualRef,
+      orderStatus: "confirmed",
+      receiptImage: withReceipt ? receiptDataUrl : null,
+      senderAccountName: transferSenderName.trim() || manualOrder.customerName,
+    }).catch(() => {});
+
     clearCart();
     try {
       sessionStorage.removeItem("tph_checkout_form");
@@ -530,20 +617,21 @@ export default function CartCheckoutPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
 
     // Send dual emails for manual transfer
-    dispatchDualConfirmationEmails(manualOrder, manualRef, "Direct GTBank Transfer (Pending Proof)");
+    dispatchDualConfirmationEmails(manualOrder, manualRef, methodLabel);
 
-    // Open WhatsApp prefilled with receipt message
-    const whatsappText = encodeURIComponent(
-      `Hello ${STORE_NAME}! I just made a direct bank transfer for my catering order:\n\n` +
-      `*Order Number:* ${manualOrder.orderNumber}\n` +
-      `*Amount Transferred:* ${formatNaira(manualOrder.total)}\n` +
-      `*Customer:* ${manualOrder.customerName} (${manualOrder.phone})\n` +
-      `*Fulfillment:* ${manualOrder.fulfillment}\n` +
-      `*Address:* ${manualOrder.address}\n\n` +
-      `I am attaching my payment receipt proof below. Please confirm and begin preparation!`
-    );
-
-    window.open(`https://wa.me/${BUSINESS_WHATSAPP_PHONE.replace(/[^0-9]/g, "")}?text=${whatsappText}`, "_blank");
+    // Only open WhatsApp if the customer specifically chose WhatsApp proof
+    if (viaWhatsApp) {
+      const whatsappText = encodeURIComponent(
+        `Hello ${STORE_NAME}! I just made a direct bank transfer for my catering order:\n\n` +
+        `*Order Number:* ${manualOrder.orderNumber}\n` +
+        `*Amount Transferred:* ${formatNaira(manualOrder.total)}\n` +
+        `*Customer:* ${manualOrder.customerName} (${manualOrder.phone})\n` +
+        `*Fulfillment:* ${manualOrder.fulfillment}\n` +
+        `*Address:* ${manualOrder.address}\n\n` +
+        `I am attaching my payment receipt proof below. Please confirm and begin preparation!`
+      );
+      window.open(`https://wa.me/${BUSINESS_WHATSAPP_PHONE.replace(/[^0-9]/g, "")}?text=${whatsappText}`, "_blank");
+    }
   }
 
   function handleCopyBank() {
@@ -590,27 +678,78 @@ export default function CartCheckoutPage() {
         <style>{FONT_IMPORT}</style>
 
         <div className="max-w-2xl mx-auto">
-          {/* Green Checkmark Badge */}
+          {/* Green Checkmark Badge or Receipt Review Badge */}
           <div className="text-center mb-8">
             <div
               className="inline-flex items-center justify-center w-20 h-20 rounded-full mb-4 shadow-md transition-transform transform scale-105"
-              style={{ backgroundColor: "#2E7D32", color: "#F6F2EB" }}
+              style={{
+                backgroundColor: placedOrder.receiptImage ? "#A9824F" : "#2E7D32",
+                color: "#F6F2EB",
+              }}
             >
-              <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-              </svg>
+              {placedOrder.receiptImage ? (
+                <span className="text-3xl">🧾</span>
+              ) : (
+                <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
             </div>
-            <p className="text-xs uppercase tracking-widest font-semibold mb-1 text-[#2E7D32]">
-              Payment Verified • Order Confirmed
+            <p
+              className="text-xs uppercase tracking-widest font-semibold mb-1"
+              style={{ color: placedOrder.receiptImage ? "#A9824F" : "#2E7D32" }}
+            >
+              {placedOrder.receiptImage
+                ? "Transfer Receipt Uploaded • Awaiting Kitchen Approval"
+                : "Payment Verified • Order Confirmed"}
             </p>
             <h1 className="font-display text-3xl sm:text-4xl font-semibold mb-2 text-[#201D1B]">
-              Payment Successful!
+              {placedOrder.receiptImage ? "Receipt Uploaded Successfully!" : "Payment Successful!"}
             </h1>
             <p className="text-sm text-[#4A4642] max-w-md mx-auto">
-              Your payment of <strong className="text-[#201D1B] font-semibold">{formatNaira(placedOrder.total)}</strong> was
-              successful. We are now preparing your catering order.
+              {placedOrder.receiptImage ? (
+                <>
+                  We have logged your GTBank transfer proof for{" "}
+                  <strong className="text-[#201D1B] font-semibold">{formatNaira(placedOrder.total)}</strong>. Our team will verify your funds and notify you immediately.
+                </>
+              ) : (
+                <>
+                  Your payment of <strong className="text-[#201D1B] font-semibold">{formatNaira(placedOrder.total)}</strong> was
+                  successful. We are now preparing your catering order.
+                </>
+              )}
             </p>
           </div>
+
+          {/* Uploaded Receipt Preview Box */}
+          {placedOrder.receiptImage && (
+            <div className="mb-6 p-4 rounded-sm border bg-white border-[#E4DED2] flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <img
+                  src={placedOrder.receiptImage}
+                  alt="Transfer Receipt"
+                  className="w-14 h-14 object-cover rounded border border-[#E4DED2] flex-shrink-0 cursor-pointer hover:opacity-80 transition-opacity bg-[#F6F2EB]"
+                  onClick={() => window.open(placedOrder.receiptImage, "_blank")}
+                  title="Click to view full image"
+                />
+                <div className="min-w-0">
+                  <p className="font-semibold text-xs text-[#201D1B] truncate">Bank Transfer Receipt Attached</p>
+                  <p className="text-[11px] text-[#4A4642]">
+                    Sender: <strong className="text-[#201D1B]">{placedOrder.senderAccountName || placedOrder.customerName}</strong>
+                  </p>
+                  <p className="text-[10px] text-emerald-700 font-medium">✓ Uploaded & securely logged with order</p>
+                </div>
+              </div>
+              <a
+                href={placedOrder.receiptImage}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs px-3 py-1.5 rounded-sm font-medium border border-[#E4DED2] hover:bg-[#F6F2EB] text-[#201D1B] whitespace-nowrap"
+              >
+                View Full
+              </a>
+            </div>
+          )}
 
           {/* Dual Email Dispatch Status Banner */}
           <div className="mb-6 p-4 rounded-sm border bg-[#FBF9F5] border-[#E4DED2] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-sm">
@@ -1107,14 +1246,147 @@ export default function CartCheckoutPage() {
                         </div>
                       </div>
 
+                      {/* OPTION A: DIRECT RECEIPT UPLOAD (NO WHATSAPP NEEDED) */}
+                      <div className="p-3.5 rounded-sm bg-white border border-[#E4DED2] space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-base">📸</span>
+                            <span className="font-semibold text-xs text-[#201D1B]">
+                              Upload Transfer Receipt (Direct)
+                            </span>
+                          </div>
+                          <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 font-medium">
+                            No WhatsApp Needed
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-[#4A4642]">
+                          Upload a screenshot from your bank mobile app or deposit slip. We will verify and process your order immediately.
+                        </p>
+
+                        {/* Sender Account Name (Optional) */}
+                        <div>
+                          <label className="block text-[11px] font-medium text-[#4A4642] mb-1">
+                            Sender Account Name <span className="text-[10px] text-[#888]">(Optional - as shown on your bank debit alert)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={transferSenderName}
+                            onChange={(e) => setTransferSenderName(e.target.value)}
+                            placeholder="e.g. David Ajayi"
+                            className="w-full px-3 py-1.5 text-xs bg-[#FBF9F5] border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                          />
+                        </div>
+
+                        {/* File Upload Box */}
+                        {!receiptDataUrl ? (
+                          <label className="border-2 border-dashed border-[#A9824F]/50 hover:border-[#6E1E2B] bg-[#FBF9F5] hover:bg-[#F3EDE2]/40 rounded-sm p-4 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-colors text-center">
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              disabled={receiptUploading}
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  setReceiptUploading(true);
+                                  setReceiptError(null);
+                                  processDeviceReceipt(
+                                    file,
+                                    (compressedUrl) => {
+                                      setReceiptFile(file);
+                                      setReceiptDataUrl(compressedUrl);
+                                      setReceiptUploading(false);
+                                      showToast("✓ Receipt screenshot loaded!");
+                                    },
+                                    (err) => {
+                                      setReceiptUploading(false);
+                                      setReceiptError(err);
+                                      showToast(err);
+                                    }
+                                  );
+                                }
+                              }}
+                            />
+                            <span className="text-2xl">🧾</span>
+                            <span className="text-xs font-semibold text-[#201D1B]">
+                              {receiptUploading ? "Optimizing receipt image..." : "Tap to choose receipt photo or screenshot"}
+                            </span>
+                            <span className="text-[10px] text-[#888]">
+                              Supports JPG, PNG, WEBP from your phone gallery or camera
+                            </span>
+                          </label>
+                        ) : (
+                          <div className="p-2.5 rounded-sm bg-[#F6F2EB] border border-[#E4DED2] flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-2.5 overflow-hidden">
+                              <img
+                                src={receiptDataUrl}
+                                alt="Receipt preview"
+                                className="w-12 h-12 object-cover rounded border border-[#E4DED2] flex-shrink-0 bg-white"
+                              />
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-[#201D1B] truncate">
+                                  {receiptFile?.name || "Payment Receipt Screenshot"}
+                                </p>
+                                <p className="text-[10px] text-emerald-700 font-medium flex items-center gap-1">
+                                  <span>✓</span> Ready to submit
+                                </p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReceiptDataUrl(null);
+                                setReceiptFile(null);
+                              }}
+                              className="text-[11px] text-red-600 hover:text-red-800 font-medium px-2 py-1 rounded hover:bg-red-50 flex-shrink-0"
+                            >
+                              ✕ Remove
+                            </button>
+                          </div>
+                        )}
+
+                        {receiptError && (
+                          <p className="text-[11px] text-red-600 font-medium">{receiptError}</p>
+                        )}
+
+                        {/* Submit Button with Uploaded Receipt */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleManualTransferConfirm({ withReceipt: true, viaWhatsApp: false });
+                          }}
+                          disabled={paying || !receiptDataUrl || receiptUploading}
+                          className={`w-full py-2.5 rounded-sm text-white text-xs font-semibold transition-all flex items-center justify-center gap-2 ${
+                            receiptDataUrl && !receiptUploading
+                              ? "bg-[#6E1E2B] hover:opacity-90 cursor-pointer shadow-sm"
+                              : "bg-gray-300 text-gray-500 cursor-not-allowed"
+                          }`}
+                        >
+                          <span>{paying ? "Submitting Order..." : "✓ Submit Transfer with Uploaded Receipt"}</span>
+                        </button>
+                      </div>
+
+                      {/* Divider: OR send to WhatsApp */}
+                      <div className="relative flex items-center justify-center my-3">
+                        <div className="border-t border-[#E4DED2] w-full" />
+                        <span className="bg-[#FBF9F5] px-3 text-[10px] uppercase font-semibold text-[#888] tracking-wider absolute">
+                          or send proof via WhatsApp
+                        </span>
+                      </div>
+
+                      {/* OPTION B: SEND TO WHATSAPP */}
                       <button
                         type="button"
-                        onClick={(e) => { e.stopPropagation(); handleManualTransferConfirm(); }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleManualTransferConfirm({ withReceipt: false, viaWhatsApp: true });
+                        }}
                         disabled={paying}
                         className="w-full py-2.5 rounded-sm text-white text-xs font-semibold hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                         style={{ backgroundColor: "#25D366" }}
                       >
-                        <span>✓ I Have Transferred — Send Proof to WhatsApp</span>
+                        <span>💬 I Have Transferred — Send Proof to WhatsApp</span>
                       </button>
                     </div>
                   )}

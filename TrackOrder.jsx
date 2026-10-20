@@ -301,6 +301,35 @@ export default function TrackOrderPage() {
                     </div>
                   </div>
 
+                  {/* Uploaded Receipt Card */}
+                  {currentOrder.receiptImage && (
+                    <div className="mb-8 p-4 rounded-sm bg-white border border-[#E4DED2] flex items-center justify-between gap-4">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img
+                          src={currentOrder.receiptImage}
+                          alt="Transfer Receipt Proof"
+                          className="w-12 h-12 object-cover rounded border border-[#E4DED2] flex-shrink-0 bg-[#F6F2EB]"
+                        />
+                        <div className="min-w-0">
+                          <p className="font-semibold text-xs text-[#201D1B] truncate">Bank Transfer Receipt Attached</p>
+                          <p className="text-[11px] text-[#4A4642]">
+                            {currentOrder.isPaid
+                              ? "✓ Payment verified by kitchen dispatch"
+                              : "Under review by kitchen dispatch desk"}
+                          </p>
+                        </div>
+                      </div>
+                      <a
+                        href={currentOrder.receiptImage}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs px-3 py-1.5 rounded-sm border border-[#E4DED2] hover:bg-[#F6F2EB] text-[#201D1B] font-medium whitespace-nowrap"
+                      >
+                        View Full ↗
+                      </a>
+                    </div>
+                  )}
+
                   {/* Status timeline */}
                   <div className="mb-10">
                     <div className="flex items-start">

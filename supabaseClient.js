@@ -51,7 +51,11 @@ export async function createSupabaseOrder(order) {
         {
           stage: order.orderStatus || "confirmed",
           timestamp: new Date().toISOString(),
-          note: "Order created successfully",
+          receiptImage: order.receiptImage || null,
+          senderName: order.senderAccountName || null,
+          note: order.receiptImage
+            ? "Customer uploaded manual bank transfer receipt"
+            : "Order created successfully",
         },
       ],
     };
@@ -128,7 +132,7 @@ export async function fetchSupabaseOrderByNumber(orderNumber) {
 /**
  * Update an order's fulfillment status (for Admin Dashboard)
  */
-export async function updateSupabaseOrderStatus(orderNumber, newStatus) {
+export async function updateSupabaseOrderStatus(orderNumber, newStatus, extraFields = {}) {
   if (!supabase || !orderNumber) return null;
 
   try {
@@ -141,12 +145,15 @@ export async function updateSupabaseOrderStatus(orderNumber, newStatus) {
       note: `Status updated to ${newStatus}`,
     });
 
+    const updatePayload = {
+      order_status: newStatus,
+      status_history: updatedHistory,
+      ...extraFields,
+    };
+
     const { data, error } = await supabase
       .from("orders")
-      .update({
-        order_status: newStatus,
-        status_history: updatedHistory,
-      })
+      .update(updatePayload)
       .ilike("order_number", orderNumber.trim().toUpperCase())
       .select()
       .single();
@@ -356,5 +363,13 @@ function mapOrderRowToApp(row) {
     paymentReference: row.payment_reference || "",
     orderStatus: row.order_status || "confirmed",
     statusHistory: row.status_history || [],
+    receiptImage:
+      row.receipt_image ||
+      row.status_history?.find((h) => h?.receiptImage)?.receiptImage ||
+      "",
+    senderAccountName:
+      row.sender_account_name ||
+      row.status_history?.find((h) => h?.senderName)?.senderName ||
+      "",
   };
 }

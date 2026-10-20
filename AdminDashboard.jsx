@@ -231,6 +231,7 @@ export default function AdminDashboard() {
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [receiptMode, setReceiptMode] = useState("customer"); // "customer" | "kitchen"
   const [dispenseKey, setDispenseKey] = useState(0); // Incremented to re-trigger paper roll animation
+  const [viewingReceiptImage, setViewingReceiptImage] = useState(null); // When not null, opens Receipt Zoom Lightbox
 
   // Vendor Security PIN Gate State
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -1247,7 +1248,18 @@ export default function AdminDashboard() {
                             }`}
                           >
                             <td className="py-3 px-3 font-mono font-semibold text-[#6E1E2B]">
-                              {o.orderNumber}
+                              <div className="flex items-center gap-1.5">
+                                <span>{o.orderNumber}</span>
+                                {o.receiptImage && (
+                                  <span
+                                    className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 font-sans font-medium flex items-center gap-0.5"
+                                    title="Customer uploaded bank transfer receipt"
+                                  >
+                                    <span>📎</span>
+                                    <span>Receipt</span>
+                                  </span>
+                                )}
+                              </div>
                             </td>
                             <td className="py-3 px-3">
                               <p className="font-medium text-[#201D1B]">{o.customerName}</p>
@@ -1448,15 +1460,70 @@ export default function AdminDashboard() {
                     <p className="text-[11px] text-[#4A4642] mt-1">Paid on: {selectedOrder.paidAt || selectedOrder.placedOn}</p>
                   </div>
 
-                  {/* Bank Transfer Approval Card (If payment is pending verification) */}
-                  {(!selectedOrder.isPaid || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid") && (
+                  {/* Bank Transfer Approval Card & Uploaded Receipt Proof */}
+                  {selectedOrder.receiptImage ? (
+                    <div className="mb-4 p-3.5 rounded-sm bg-[#F0FDF4] border border-[#BBF7D0] text-xs space-y-3">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-2">
+                          <span className="text-lg">🧾</span>
+                          <div>
+                            <p className="font-semibold text-[#166534] text-xs">Customer Uploaded Transfer Receipt</p>
+                            <p className="text-[11px] text-[#15803D] mt-0.5">
+                              Sender: <strong className="font-medium text-[#166534]">{selectedOrder.senderAccountName || selectedOrder.customerName}</strong>
+                            </p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-[#DCFCE7] text-[#166534] uppercase tracking-wider">
+                          Proof Attached
+                        </span>
+                      </div>
+
+                      {/* Receipt Image Thumbnail & Zoom */}
+                      <div className="relative group rounded border border-[#BBF7D0] overflow-hidden bg-white max-h-48 flex items-center justify-center">
+                        <img
+                          src={selectedOrder.receiptImage}
+                          alt="Customer Payment Receipt"
+                          className="w-full object-contain max-h-44 cursor-pointer hover:scale-[1.02] transition-transform"
+                          onClick={() => setViewingReceiptImage(selectedOrder.receiptImage)}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setViewingReceiptImage(selectedOrder.receiptImage)}
+                          className="absolute bottom-2 right-2 px-2.5 py-1 bg-black/75 hover:bg-black text-white text-[11px] font-medium rounded shadow flex items-center gap-1 cursor-pointer"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607zM10.5 7.5v6m3-3h-6" />
+                          </svg>
+                          <span>Zoom Receipt</span>
+                        </button>
+                      </div>
+
+                      {/* Verify Button (if still unpaid) */}
+                      {(!selectedOrder.isPaid || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid") ? (
+                        <button
+                          onClick={() => verifyTransferPayment(selectedOrder.orderNumber)}
+                          className="w-full py-2.5 rounded-sm text-white font-semibold text-xs shadow-sm hover:opacity-95 transition-opacity flex items-center justify-center gap-1.5 cursor-pointer"
+                          style={{ backgroundColor: "#166534" }}
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                          </svg>
+                          <span>✓ Verify Receipt & Confirm Order</span>
+                        </button>
+                      ) : (
+                        <div className="py-1 px-2 rounded bg-emerald-100 text-emerald-800 text-[11px] font-medium text-center">
+                          ✓ Transfer Verified & Funds Reconciled
+                        </div>
+                      )}
+                    </div>
+                  ) : (!selectedOrder.isPaid || (selectedOrder.paymentStatus || "").toLowerCase() !== "paid") && (
                     <div className="mb-4 p-3.5 rounded-sm bg-[#FFF8E1] border border-[#FFE082] text-xs space-y-2.5">
                       <div className="flex items-start gap-2">
                         <span className="text-base">⚠️</span>
                         <div>
                           <p className="font-semibold text-[#E65100]">Awaiting Bank Transfer Confirmation</p>
                           <p className="text-[11px] text-[#5D4037] mt-0.5">
-                            Customer paid via direct GTBank transfer. Please check your bank app for <strong>{formatNaira(selectedOrder.total)}</strong> before confirming.
+                            Customer paid via direct GTBank transfer. No receipt uploaded (customer may send via WhatsApp). Check your bank app for <strong>{formatNaira(selectedOrder.total)}</strong> before confirming.
                           </p>
                         </div>
                       </div>
@@ -2973,6 +3040,61 @@ export default function AdminDashboard() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* RECEIPT ZOOM / LIGHTBOX MODAL */}
+      {viewingReceiptImage && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/85 backdrop-blur-sm animate-fade-in"
+          onClick={() => setViewingReceiptImage(null)}
+        >
+          <div
+            className="relative max-w-2xl max-h-[92vh] bg-white rounded-sm shadow-2xl p-4 overflow-hidden flex flex-col items-center border border-[#E4DED2]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-3 mb-3 border-b border-[#E4DED2]">
+              <div className="flex items-center gap-2">
+                <span className="text-base">🧾</span>
+                <div>
+                  <h4 className="font-display font-bold text-sm text-[#201D1B]">Bank Transfer Receipt Proof</h4>
+                  <p className="text-[11px] text-[#4A4642]">Order #{selectedOrder?.orderNumber} • {selectedOrder?.customerName}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingReceiptImage(null)}
+                className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center justify-center text-xs font-bold transition-colors cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="overflow-auto max-h-[72vh] w-full flex items-center justify-center bg-gray-50 p-2 rounded border border-[#E4DED2]/60">
+              <img
+                src={viewingReceiptImage}
+                alt="Payment Receipt Screenshot"
+                className="max-w-full max-h-[68vh] object-contain rounded shadow-sm"
+              />
+            </div>
+            <div className="w-full pt-3 mt-3 border-t border-[#E4DED2] flex items-center justify-between">
+              <a
+                href={viewingReceiptImage}
+                target="_blank"
+                rel="noreferrer"
+                download={`Receipt_${selectedOrder?.orderNumber || "order"}.jpg`}
+                className="text-xs px-3 py-1.5 rounded-sm border border-[#E4DED2] bg-white text-[#201D1B] hover:bg-gray-50 font-medium"
+              >
+                Open Original in New Tab ↗
+              </a>
+              <button
+                type="button"
+                onClick={() => setViewingReceiptImage(null)}
+                className="text-xs px-4 py-1.5 rounded-sm bg-[#6E1E2B] text-white font-medium hover:bg-[#561722] cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

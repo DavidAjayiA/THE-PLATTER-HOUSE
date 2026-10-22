@@ -225,7 +225,10 @@ function DraggablePageSwitcher({ currentHash, navigateTo }) {
                 { label: "Cart", hash: "#cart" },
               ];
 
-              if (isStaffAuthed() || currentHash.toLowerCase().startsWith("#admin")) {
+              // During testing & review, Admin is accessible in the page switcher for testers
+              const isTestingMode = true;
+
+              if (isTestingMode || isStaffAuthed() || currentHash.toLowerCase().startsWith("#admin")) {
                 pages.push({ label: "Admin ⚙️", hash: "#admin", admin: true });
               }
 

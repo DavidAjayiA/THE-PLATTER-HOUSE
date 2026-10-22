@@ -43,6 +43,13 @@ export const ADMIN_PIN = "1234";
 // Admin Inactivity Auto-Lock Timeout in Minutes (Default baseline; can be customized in Admin Settings)
 export const ADMIN_INACTIVITY_TIMEOUT_MINUTES = 3;
 
+// Authorized Staff Email Accounts (Whitelisted for Two-Factor Device Authorization)
+export const DEFAULT_AUTHORIZED_ADMINS = [
+  { email: BUSINESS_EMAIL, role: "Owner / Master Admin" },
+  { email: "david@theplatterhouse.com", role: "Store Manager" },
+  { email: "admin@theplatterhouse.com", role: "Kitchen Dispatch" },
+];
+
 // Supabase Cloud Database Configuration (Multi-device live sync)
 export const SUPABASE_URL = "https://owrblegiqxyhjxzwjbwa.supabase.co";
 export const SUPABASE_ANON_KEY = "sb_publishable_zXd_eK_mjwsyhWw5z-YgyA_l0DXos9K";

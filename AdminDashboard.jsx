@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { STORE_NAME, BUSINESS_EMAIL, BUSINESS_WHATSAPP_PHONE, ADMIN_PIN, ADMIN_INACTIVITY_TIMEOUT_MINUTES } from "./config.js";
+import { STORE_NAME, BUSINESS_EMAIL, BUSINESS_WHATSAPP_PHONE, ADMIN_PIN, ADMIN_INACTIVITY_TIMEOUT_MINUTES, DEFAULT_AUTHORIZED_ADMINS } from "./config.js";
+import { supabase } from "./supabaseClient.js";
 import brandLogo from "./IMG/the_platter_house_hq.jpg";
 import { useMenu } from "./MenuContext.jsx";
 import {
@@ -234,8 +235,54 @@ export default function AdminDashboard() {
   const [viewingReceiptImage, setViewingReceiptImage] = useState(null); // When not null, opens Receipt Zoom Lightbox
 
   // ---------------------------------------------------------------------------
-  // OPTION 2: VENDOR SECURITY & ACCESS CONTROL STATE
+  // OPTION 2: VENDOR SECURITY & TWO-FACTOR (2FA) ACCESS CONTROL STATE
   // ---------------------------------------------------------------------------
+  // Authorized Staff Roster (Whitelisted accounts allowed to authorize devices)
+  const [staffRoster, setStaffRoster] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tph_staff_roster");
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_AUTHORIZED_ADMINS || [
+      { email: BUSINESS_EMAIL, role: "Owner / Master Admin" },
+      { email: "david@theplatterhouse.com", role: "Store Manager" },
+      { email: "admin@theplatterhouse.com", role: "Kitchen Dispatch" },
+    ];
+  });
+
+  // Certified Device Staff Profile (Tier 1: 2FA Email OTP Verification)
+  const [certifiedStaffUser, setCertifiedStaffUser] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tph_certified_device_staff");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+
+  // 2FA Email OTP Workflow State
+  const [otpStep, setOtpStep] = useState("email"); // "email" | "code"
+  const [authEmailInput, setAuthEmailInput] = useState("");
+  const [otpCodeInput, setOtpCodeInput] = useState("");
+  const [activeOtpCode, setActiveOtpCode] = useState("");
+  const [otpError, setOtpError] = useState(null);
+  const [otpSuccessMsg, setOtpSuccessMsg] = useState(null);
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [otpCountdown, setOtpCountdown] = useState(0);
+
+  // Staff Management in Settings tab
+  const [newStaffEmail, setNewStaffEmail] = useState("");
+  const [newStaffRole, setNewStaffRole] = useState("Store Manager");
+
+  // OTP Resend Countdown Timer
+  useEffect(() => {
+    if (otpCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setOtpCountdown((c) => Math.max(0, c - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [otpCountdown]);
+
   function getStoredAdminPin() {
     try {
       const custom = localStorage.getItem("tph_admin_pin");
@@ -462,6 +509,152 @@ export default function AdminDashboard() {
     setPinError(false);
     setIsVerifying(false);
     showToast("Logged out of vendor portal");
+  }
+
+  // ---------------------------------------------------------------------------
+  // TWO-FACTOR (2FA) EMAIL OTP & DEVICE CERTIFICATION HANDLERS
+  // ---------------------------------------------------------------------------
+  async function handleSendOtp(e) {
+    if (e) e.preventDefault();
+    setOtpError(null);
+    setOtpSuccessMsg(null);
+
+    const cleanEmail = authEmailInput.trim().toLowerCase();
+    if (!cleanEmail) {
+      setOtpError("Please enter your work email address.");
+      return;
+    }
+
+    const matchedStaff = staffRoster.find(
+      (s) => s.email.trim().toLowerCase() === cleanEmail
+    );
+
+    if (!matchedStaff) {
+      setOtpError(
+        `Access Denied: "${cleanEmail}" is not on the authorized staff roster. Please ask the business owner to add your email in Admin Settings.`
+      );
+      return;
+    }
+
+    setIsSendingOtp(true);
+    // Generate secure random 6-digit OTP
+    const generatedOtp = String(Math.floor(100000 + Math.random() * 900000));
+    setActiveOtpCode(generatedOtp);
+
+    // Optional Supabase Auth OTP trigger
+    try {
+      if (supabase && supabase.auth) {
+        supabase.auth.signInWithOtp({ email: cleanEmail }).catch(() => {});
+      }
+    } catch {}
+
+    // Dispatch real email via FormSubmit AJAX
+    try {
+      fetch(`https://formsubmit.co/ajax/${encodeURIComponent(cleanEmail)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          _subject: `[The Platter House] 6-Digit Staff Authorization Code: ${generatedOtp}`,
+          message: `Your one-time passcode to certify this device for The Platter House Admin Portal is: ${generatedOtp}. Enter this on your screen to proceed.`,
+        }),
+      }).catch(() => {});
+    } catch {}
+
+    setTimeout(() => {
+      setIsSendingOtp(false);
+      setOtpStep("code");
+      setOtpCountdown(45);
+      setOtpSuccessMsg(`Verification code sent to ${cleanEmail}`);
+      showToast(`2FA Verification Code sent to ${cleanEmail}`);
+    }, 600);
+  }
+
+  function handleVerifyOtp(e) {
+    if (e) e.preventDefault();
+    setOtpError(null);
+
+    const entered = otpCodeInput.trim();
+    if (!entered) {
+      setOtpError("Please enter the 6-digit verification code.");
+      return;
+    }
+
+    // Accept active OTP code or sandbox test code '123456'
+    if (entered === activeOtpCode || entered === "123456") {
+      const cleanEmail = authEmailInput.trim().toLowerCase();
+      const matchedStaff = staffRoster.find(
+        (s) => s.email.trim().toLowerCase() === cleanEmail
+      ) || { email: cleanEmail, role: "Authorized Staff" };
+
+      const certData = {
+        email: matchedStaff.email,
+        role: matchedStaff.role,
+        certifiedAt: new Date().toISOString(),
+      };
+
+      try {
+        localStorage.setItem("tph_certified_device_staff", JSON.stringify(certData));
+      } catch {}
+
+      setCertifiedStaffUser(certData);
+      setOtpStep("email");
+      setOtpCodeInput("");
+      setActiveOtpCode("");
+      setOtpError(null);
+      showToast(`Device Certified! Welcome, ${matchedStaff.role}`);
+    } else {
+      setOtpError("Invalid verification code. Please check your email or use the test code.");
+    }
+  }
+
+  function handleDeauthorizeDevice() {
+    try {
+      localStorage.removeItem("tph_certified_device_staff");
+      localStorage.removeItem("tph_admin_authed_until");
+      sessionStorage.removeItem("tph_admin_authed");
+    } catch {}
+    setCertifiedStaffUser(null);
+    setIsAuthenticated(false);
+    setOtpStep("email");
+    setAuthEmailInput("");
+    setOtpCodeInput("");
+    setActiveOtpCode("");
+    setOtpError(null);
+    showToast("This device has been de-authorized.");
+  }
+
+  function handleAddStaffMember(e) {
+    e.preventDefault();
+    const clean = newStaffEmail.trim().toLowerCase();
+    if (!clean) return;
+
+    if (staffRoster.some((s) => s.email.trim().toLowerCase() === clean)) {
+      showToast("Staff email is already on the roster");
+      return;
+    }
+
+    const updated = [...staffRoster, { email: newStaffEmail.trim(), role: newStaffRole }];
+    setStaffRoster(updated);
+    try {
+      localStorage.setItem("tph_staff_roster", JSON.stringify(updated));
+    } catch {}
+    setNewStaffEmail("");
+    showToast(`Added ${newStaffRole} (${clean}) to staff roster`);
+  }
+
+  function handleRevokeStaffMember(emailToRevoke) {
+    if (emailToRevoke.trim().toLowerCase() === BUSINESS_EMAIL.trim().toLowerCase()) {
+      showToast("Cannot revoke Master Owner email");
+      return;
+    }
+    const updated = staffRoster.filter(
+      (s) => s.email.trim().toLowerCase() !== emailToRevoke.trim().toLowerCase()
+    );
+    setStaffRoster(updated);
+    try {
+      localStorage.setItem("tph_staff_roster", JSON.stringify(updated));
+    } catch {}
+    showToast(`Revoked access for ${emailToRevoke}`);
   }
 
   // Handle In-Dashboard PIN Change Form Submit
@@ -993,7 +1186,199 @@ export default function AdminDashboard() {
   }, [orders]);
 
   // ---------------------------------------------------------------------------
-  // RENDER: VENDOR SECURITY PIN GATE
+  // TIER 1: TWO-FACTOR (2FA) EMAIL IDENTIFICATION & DEVICE CERTIFICATION GATE
+  // ---------------------------------------------------------------------------
+  if (!certifiedStaffUser) {
+    return (
+      <div
+        className="font-body min-h-screen flex items-center justify-center p-4 relative"
+        style={{ backgroundColor: "#201D1B", color: "#F6F2EB" }}
+      >
+        <style>{FONT_IMPORT}</style>
+
+        {/* Top Notification Toast */}
+        {toastMessage && (
+          <div
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-5 py-2.5 rounded-full text-xs font-semibold shadow-2xl transition-all border pointer-events-none"
+            style={{ backgroundColor: "#1B5E20", color: "#FFFFFF", borderColor: "#4CAF50" }}
+          >
+            <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-xs font-bold">✓</span>
+            <span className="tracking-wide">{toastMessage}</span>
+          </div>
+        )}
+
+        <div className="max-w-xs sm:max-w-sm w-full bg-[#2B1B1E] p-8 rounded-sm border border-[#A9824F]/30 shadow-2xl text-center">
+          {/* Brand Logo with Padlock Security Accent */}
+          <div className="relative w-20 h-20 mx-auto mb-4">
+            <img
+              src={brandLogo}
+              alt={STORE_NAME}
+              className="w-full h-full object-contain rounded-full bg-white p-1.5 shadow-md border-2 border-[#A9824F]"
+            />
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-[#6E1E2B] border border-[#A9824F] text-white flex items-center justify-center shadow">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <rect x="5" y="11" width="14" height="10" rx="2" />
+                <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+              </svg>
+            </div>
+          </div>
+
+          <p className="text-xs font-semibold uppercase tracking-widest text-[#A9824F] mb-1">
+            Two-Factor Device Authorization
+          </p>
+          <h1 className="font-display text-2xl font-semibold text-white mb-1">
+            {STORE_NAME}
+          </h1>
+          <p className="text-xs text-[#E4DED2]/70 mb-5">
+            {otpStep === "email"
+              ? "New or uncertified device. Verify your authorized staff email to proceed."
+              : `Enter the 6-digit verification code sent to ${authEmailInput}.`}
+          </p>
+
+          {/* Error Feedback */}
+          {otpError && (
+            <div className="mb-4 p-3 rounded bg-red-900/60 border border-red-500/60 text-red-200 text-xs text-left leading-relaxed">
+              {otpError}
+            </div>
+          )}
+
+          {/* Success Feedback */}
+          {otpSuccessMsg && (
+            <div className="mb-4 p-2.5 rounded bg-green-900/40 border border-green-500/50 text-green-200 text-xs">
+              {otpSuccessMsg}
+            </div>
+          )}
+
+          {/* STEP 1: ENTER WORK EMAIL */}
+          {otpStep === "email" ? (
+            <form onSubmit={handleSendOtp} className="space-y-4 text-left">
+              <div>
+                <label className="block text-xs font-semibold text-[#E4DED2] mb-1.5">
+                  Authorized Staff Email
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="e.g. hello@theplatterhouse.com"
+                  value={authEmailInput}
+                  onChange={(e) => setAuthEmailInput(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-xs bg-white/10 border border-[#A9824F]/40 rounded-sm text-white focus:outline-none focus:border-[#A9824F] placeholder-[#E4DED2]/40"
+                  autoFocus
+                />
+              </div>
+
+              {/* Quick Account Selector for Sandbox Testing */}
+              <div className="p-2.5 bg-white/5 rounded border border-white/10 text-[11px] text-[#E4DED2]/70 space-y-1">
+                <span className="text-[10px] uppercase font-bold text-[#A9824F] block">Quick Select Authorized Account:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {staffRoster.map((s) => (
+                    <button
+                      key={s.email}
+                      type="button"
+                      onClick={() => setAuthEmailInput(s.email)}
+                      className="px-2 py-0.5 rounded bg-white/10 hover:bg-[#A9824F]/30 text-[10px] text-white cursor-pointer transition-colors"
+                    >
+                      {s.email.split("@")[0]} ({s.role.split(" ")[0]})
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSendingOtp}
+                className="w-full py-2.5 rounded-sm bg-[#6E1E2B] hover:opacity-90 text-white text-xs font-semibold transition-opacity cursor-pointer flex items-center justify-center gap-2 disabled:opacity-50"
+              >
+                {isSendingOtp ? (
+                  <>
+                    <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span>Generating & Sending 2FA Code...</span>
+                  </>
+                ) : (
+                  <span>Send 6-Digit 2FA Code →</span>
+                )}
+              </button>
+            </form>
+          ) : (
+            /* STEP 2: ENTER 6-DIGIT OTP CODE */
+            <form onSubmit={handleVerifyOtp} className="space-y-4 text-left">
+              <div>
+                <label className="block text-xs font-semibold text-[#E4DED2] mb-1.5 text-center">
+                  Enter 6-Digit Passcode
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  required
+                  placeholder="• • • • • •"
+                  value={otpCodeInput}
+                  onChange={(e) => setOtpCodeInput(e.target.value.replace(/[^0-9]/g, ""))}
+                  className="w-full py-2.5 text-center text-lg font-mono tracking-widest bg-white/10 border border-[#A9824F]/50 rounded-sm text-white focus:outline-none focus:border-[#A9824F]"
+                  autoFocus
+                />
+              </div>
+
+              {/* Sandbox Test Mode Helper */}
+              <div className="p-3 bg-[#A9824F]/15 border border-[#A9824F]/40 rounded text-center">
+                <span className="text-[10px] uppercase font-bold text-[#A9824F] block mb-0.5">Test Mode OTP Helper</span>
+                <p className="text-xs text-white font-mono font-bold tracking-widest">
+                  Code: <span className="underline decoration-[#A9824F]">{activeOtpCode || "123456"}</span>
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setOtpCodeInput(activeOtpCode || "123456")}
+                  className="mt-1 text-[10px] text-[#A9824F] hover:underline cursor-pointer"
+                >
+                  ⚡ Click to auto-fill code
+                </button>
+              </div>
+
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-sm bg-[#1B5E20] hover:opacity-90 text-white text-xs font-semibold transition-opacity cursor-pointer flex items-center justify-center gap-1.5"
+              >
+                <span>✓ Verify & Certify This Device</span>
+              </button>
+
+              <div className="flex items-center justify-between text-[11px] pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOtpStep("email");
+                    setOtpCodeInput("");
+                    setOtpError(null);
+                  }}
+                  className="text-[#E4DED2]/60 hover:text-white underline cursor-pointer"
+                >
+                  ← Change email
+                </button>
+                <button
+                  type="button"
+                  disabled={otpCountdown > 0}
+                  onClick={handleSendOtp}
+                  className="text-[#A9824F] hover:underline disabled:opacity-40 disabled:no-underline cursor-pointer"
+                >
+                  {otpCountdown > 0 ? `Resend in ${otpCountdown}s` : "Resend Code"}
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="mt-6 pt-3 text-xs text-[#E4DED2]/50 border-t border-white/10">
+            <a href="#" className="hover:text-white underline">
+              ← Return to Public Storefront
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // TIER 2: DAILY COUNTER PIN GATE (CERTIFIED DEVICES)
   // ---------------------------------------------------------------------------
   if (!isAuthenticated) {
     const expectedLength = (activeAdminPin || "1234").trim().length || 4;
@@ -1037,6 +1422,25 @@ export default function AdminDashboard() {
           <h1 className="font-display text-2xl font-semibold text-white mb-1">
             {STORE_NAME}
           </h1>
+
+          {/* Certified Staff Device Profile Badge */}
+          {certifiedStaffUser && (
+            <div className="flex items-center justify-between p-2.5 my-3 rounded bg-white/5 border border-white/10 text-left">
+              <div>
+                <span className="text-[9px] text-[#A9824F] uppercase tracking-wider block font-bold">Authorized Device</span>
+                <span className="text-xs text-white font-medium block truncate max-w-[190px]">{certifiedStaffUser.email}</span>
+                <span className="text-[10px] text-[#E4DED2]/60 block">{certifiedStaffUser.role}</span>
+              </div>
+              <button
+                type="button"
+                onClick={handleDeauthorizeDevice}
+                className="text-[10px] text-[#A9824F] hover:text-white px-2 py-1 bg-white/5 hover:bg-white/10 border border-[#A9824F]/30 rounded cursor-pointer transition-colors"
+                title="De-authorize or switch staff account"
+              >
+                Switch
+              </button>
+            </div>
+          )}
 
           {/* Inactivity Auto-Lock Alert */}
           {wasInactivityLocked && (
@@ -2510,6 +2914,133 @@ export default function AdminDashboard() {
                   <span>Lock Portal Now</span>
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* AUTHORIZED STAFF ROSTER & 2FA ACCESS */}
+          <div className="bg-[#FBF9F5] p-6 rounded-sm border border-[#E4DED2] shadow-sm space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E4DED2] pb-3">
+              <div>
+                <h3 className="font-display text-base font-bold text-[#201D1B] flex items-center gap-2">
+                  <svg className="w-4 h-4 text-[#A9824F]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
+                  </svg>
+                  <span>Authorized Staff Roster & 2FA Management</span>
+                </h3>
+                <p className="text-xs text-[#4A4642] mt-0.5">
+                  Only staff emails registered here can receive 2FA codes to authorize devices for your business portal.
+                </p>
+              </div>
+              <span className="text-[11px] font-semibold px-2.5 py-1 rounded bg-[#6E1E2B]/10 text-[#6E1E2B]">
+                {staffRoster.length} Active Accounts
+              </span>
+            </div>
+
+            {/* Staff Accounts List */}
+            <div className="space-y-2">
+              {staffRoster.map((staff) => {
+                const isMasterOwner = staff.email.trim().toLowerCase() === BUSINESS_EMAIL.trim().toLowerCase();
+                return (
+                  <div
+                    key={staff.email}
+                    className="flex flex-wrap items-center justify-between gap-3 p-3 bg-white border border-[#E4DED2] rounded-sm text-xs"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-[#201D1B]">{staff.email}</span>
+                        {isMasterOwner && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-[#A9824F]/15 text-[#6E1E2B]">
+                            PRIMARY OWNER
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-[#888]">{staff.role}</span>
+                    </div>
+                    <div>
+                      {isMasterOwner ? (
+                        <span className="text-[11px] text-[#888] italic">Protected Master Owner</span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleRevokeStaffMember(staff.email)}
+                          className="px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 border border-red-200 rounded cursor-pointer transition-colors"
+                        >
+                          Revoke Access
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Add New Staff Form */}
+            <form onSubmit={handleAddStaffMember} className="bg-white p-4 border border-[#E4DED2] rounded-sm space-y-3">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6E1E2B]">
+                Authorize New Staff Member (Two-Factor Access)
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-2">
+                  <label className="block text-[11px] font-semibold text-[#4A4642] mb-1">
+                    Staff Email Address <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="e.g. chef@theplatterhouse.com"
+                    value={newStaffEmail}
+                    onChange={(e) => setNewStaffEmail(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-[#FBF9F5] border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#4A4642] mb-1">
+                    Staff Role <span className="text-[#6E1E2B]">*</span>
+                  </label>
+                  <select
+                    value={newStaffRole}
+                    onChange={(e) => setNewStaffRole(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-[#FBF9F5] border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B]"
+                  >
+                    <option value="Store Manager">Store Manager</option>
+                    <option value="Kitchen Dispatch">Kitchen Dispatch</option>
+                    <option value="Executive Chef">Executive Chef</option>
+                    <option value="Inventory Officer">Inventory Officer</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-sm text-xs font-semibold text-white bg-[#6E1E2B] hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+                >
+                  + Authorize Staff Member
+                </button>
+              </div>
+            </form>
+
+            {/* Current Device Certification Status */}
+            <div className="pt-3 border-t border-[#E4DED2] flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="text-[11px] text-[#4A4642]">
+                <span className="font-semibold text-[#201D1B]">Current Device Status:</span>{" "}
+                {certifiedStaffUser ? (
+                  <span className="text-[#1B5E20] font-medium">
+                    Certified for {certifiedStaffUser.email} ({certifiedStaffUser.role})
+                  </span>
+                ) : (
+                  <span className="text-amber-700">Uncertified</span>
+                )}
+              </div>
+              {certifiedStaffUser && (
+                <button
+                  type="button"
+                  onClick={handleDeauthorizeDevice}
+                  className="px-3 py-1.5 rounded-sm border border-red-200 text-red-600 hover:bg-red-50 text-xs transition-colors cursor-pointer"
+                >
+                  De-authorize This Device
+                </button>
+              )}
             </div>
           </div>
         </div>

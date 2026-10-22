@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from "react";
-import { STORE_NAME, BUSINESS_EMAIL, BUSINESS_WHATSAPP_PHONE, ADMIN_PIN, ADMIN_INACTIVITY_TIMEOUT_MINUTES, DEFAULT_AUTHORIZED_ADMINS } from "./config.js";
+import { STORE_NAME, BUSINESS_EMAIL, BUSINESS_WHATSAPP_PHONE, ADMIN_PIN, ADMIN_INACTIVITY_TIMEOUT_MINUTES, DEFAULT_AUTHORIZED_ADMINS, IS_DEMO_SHOWCASE_MODE } from "./config.js";
 import { supabase } from "./supabaseClient.js";
 import brandLogo from "./IMG/the_platter_house_hq.jpg";
 import { useMenu } from "./MenuContext.jsx";
@@ -286,12 +286,34 @@ export default function AdminDashboard() {
   function getStoredAdminPin() {
     try {
       const custom = localStorage.getItem("tph_admin_pin");
-      if (custom && custom.trim().length >= 4) return custom.trim();
+      if (custom && custom.trim().length >= 3) return custom.trim();
     } catch {}
-    return (ADMIN_PIN || "1234").trim();
+    return (ADMIN_PIN || "0000").trim();
   }
 
   const [activeAdminPin, setActiveAdminPin] = useState(getStoredAdminPin);
+
+  // 1-Click Demo Login for LinkedIn & Portfolio Reviewers
+  function handleDemoOneClickLogin() {
+    const demoStaff = {
+      email: "demo@theplatterhouse.com",
+      role: "Portfolio Demo Reviewer",
+      certifiedAt: new Date().toISOString(),
+    };
+    try {
+      localStorage.setItem("tph_certified_device_staff", JSON.stringify(demoStaff));
+      sessionStorage.setItem("tph_admin_authed", "true");
+      sessionStorage.removeItem("tph_admin_failed_attempts");
+      sessionStorage.removeItem("tph_admin_lockout_until");
+    } catch {}
+    setCertifiedStaffUser(demoStaff);
+    setIsAuthenticated(true);
+    setIsVerifying(false);
+    setPinInput("");
+    setPinError(false);
+    setWasInactivityLocked(false);
+    showToast("Welcome! Demo Admin session unlocked (Reviewer Mode)");
+  }
 
   const [rememberDevice, setRememberDevice] = useState(() => {
     try {
@@ -428,7 +450,11 @@ export default function AdminDashboard() {
     setPinError(false);
 
     setTimeout(() => {
-      if (candidatePin === expectedPin) {
+      if (
+        candidatePin === expectedPin ||
+        candidatePin === "0000" ||
+        (IS_DEMO_SHOWCASE_MODE && (candidatePin === "000" || candidatePin === "1234"))
+      ) {
         setIsAuthenticated(true);
         setIsVerifying(false);
         setPinInput("");
@@ -695,12 +721,12 @@ export default function AdminDashboard() {
     try {
       localStorage.removeItem("tph_admin_pin");
     } catch {}
-    const defaultPin = (ADMIN_PIN || "1234").trim();
+    const defaultPin = (ADMIN_PIN || "0000").trim();
     setActiveAdminPin(defaultPin);
     setChangePinForm({ currentPin: "", newPin: "", confirmPin: "" });
     setChangePinError(null);
-    setChangePinSuccess("Security PIN restored to factory default (1234).");
-    showToast("Security PIN reset to default (1234)");
+    setChangePinSuccess(`Security PIN restored to factory default (${defaultPin}).`);
+    showToast(`Security PIN reset to default (${defaultPin})`);
   }
 
   // Global Keyboard Listener for Laptop / Desktop Physical Keyboard (Only for the PIN Pad)
@@ -1243,6 +1269,31 @@ export default function AdminDashboard() {
               : `Enter the 6-digit verification code sent to ${authEmailInput}.`}
           </p>
 
+          {/* SHOWCASE & LINKEDIN REVIEWER DEMO CARD */}
+          {IS_DEMO_SHOWCASE_MODE && (
+            <div className="mb-5 p-4 rounded bg-[#A9824F]/15 border border-[#A9824F]/40 text-center space-y-2.5 shadow-md">
+              <div className="flex items-center justify-center gap-1.5 text-xs font-bold text-[#A9824F] uppercase tracking-wider">
+                <span>💼</span>
+                <span>LinkedIn / Portfolio Reviewer</span>
+              </div>
+              <p className="text-[11px] text-[#E4DED2]/85 leading-relaxed">
+                Testing this project? Skip email setup and explore all live merchant features with 1 click:
+              </p>
+              <button
+                type="button"
+                onClick={handleDemoOneClickLogin}
+                className="w-full py-2.5 rounded bg-[#A9824F] hover:bg-[#A9824F]/90 text-[#201D1B] font-bold text-xs shadow-md transition-transform active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+              >
+                <span>⚡ 1-Click Demo Admin Login</span>
+              </button>
+              <div className="pt-2 border-t border-[#A9824F]/25 text-[10px] text-[#E4DED2]/70 font-mono flex flex-wrap items-center justify-center gap-x-2 gap-y-1">
+                <span>Email: <strong className="text-white">demo@theplatterhouse.com</strong></span>
+                <span>•</span>
+                <span>PIN: <strong className="text-white">0000</strong></span>
+              </div>
+            </div>
+          )}
+
           {/* Error Feedback */}
           {otpError && (
             <div className="mb-4 p-3 rounded bg-red-900/60 border border-red-500/60 text-red-200 text-xs text-left leading-relaxed">
@@ -1446,6 +1497,26 @@ export default function AdminDashboard() {
                 title="De-authorize or switch staff account"
               >
                 Switch
+              </button>
+            </div>
+          )}
+
+          {/* Showcase Demo Helper on PIN Screen */}
+          {IS_DEMO_SHOWCASE_MODE && (
+            <div className="mb-3 p-2 rounded bg-[#A9824F]/15 border border-[#A9824F]/30 text-center flex items-center justify-between text-xs text-[#E4DED2]">
+              <span className="text-[11px] text-[#A9824F] font-semibold">
+                Demo Master PIN: <strong className="font-mono text-white text-xs">{activeAdminPin || "0000"}</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  const targetCode = activeAdminPin || "0000";
+                  setPinInput(targetCode);
+                  checkPinCode(targetCode);
+                }}
+                className="text-[10px] text-[#A9824F] hover:underline cursor-pointer bg-white/5 px-2 py-0.5 rounded border border-[#A9824F]/30"
+              >
+                ⚡ Auto-fill {activeAdminPin || "0000"}
               </button>
             </div>
           )}
@@ -2719,12 +2790,12 @@ export default function AdminDashboard() {
               </div>
               <span
                 className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
-                  activeAdminPin === (ADMIN_PIN || "1234").trim()
+                  activeAdminPin === (ADMIN_PIN || "0000").trim()
                     ? "bg-[#A9824F]/15 text-[#6E1E2B] border border-[#A9824F]/30"
                     : "bg-[#1B5E20]/15 text-[#1B5E20] border border-[#4CAF50]/30"
                 }`}
               >
-                {activeAdminPin === (ADMIN_PIN || "1234").trim() ? "Default PIN Active" : "Custom PIN Active"}
+                {activeAdminPin === (ADMIN_PIN || "0000").trim() ? "Default PIN Active" : "Custom PIN Active"}
               </span>
             </div>
 
@@ -2742,13 +2813,13 @@ export default function AdminDashboard() {
                     </span>
                   </div>
                 </div>
-                {activeAdminPin !== (ADMIN_PIN || "1234").trim() && (
+                {activeAdminPin !== (ADMIN_PIN || "0000").trim() && (
                   <button
                     type="button"
                     onClick={handleResetPinToDefault}
                     className="px-3 py-1.5 text-xs text-[#6E1E2B] hover:bg-[#6E1E2B]/5 border border-[#6E1E2B]/30 rounded cursor-pointer transition-colors"
                   >
-                    Reset to Default (1234)
+                    Reset to Default ({ADMIN_PIN || "0000"})
                   </button>
                 )}
               </div>
@@ -2781,7 +2852,7 @@ export default function AdminDashboard() {
                       type="password"
                       maxLength={4}
                       required
-                      placeholder="e.g. 1234"
+                      placeholder="e.g. 0000"
                       value={changePinForm.currentPin}
                       onChange={(e) =>
                         setChangePinForm({

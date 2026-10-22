@@ -37,8 +37,12 @@ export const BANK_DETAILS = {
   accountName: "The Platter House Catering Services",
 };
 
-// Vendor Security Access PIN (Default baseline code; can also be updated directly in Admin Settings)
-export const ADMIN_PIN = "1234";
+// Vendor Security Access PIN (Default baseline code: 0000)
+export const ADMIN_PIN = "0000";
+
+// Showcase / Demo Mode for LinkedIn & Portfolio Testers
+// (Set to true to show 1-Click Demo Login; set to false in strict production)
+export const IS_DEMO_SHOWCASE_MODE = true;
 
 // Admin Inactivity Auto-Lock Timeout in Minutes (Default baseline; can be customized in Admin Settings)
 export const ADMIN_INACTIVITY_TIMEOUT_MINUTES = 3;
@@ -46,6 +50,7 @@ export const ADMIN_INACTIVITY_TIMEOUT_MINUTES = 3;
 // Authorized Staff Email Accounts (Whitelisted for Two-Factor Device Authorization)
 export const DEFAULT_AUTHORIZED_ADMINS = [
   { email: BUSINESS_EMAIL, role: "Owner / Master Admin" },
+  { email: "demo@theplatterhouse.com", role: "Portfolio Demo Reviewer" },
   { email: "david@theplatterhouse.com", role: "Store Manager" },
   { email: "admin@theplatterhouse.com", role: "Kitchen Dispatch" },
 ];

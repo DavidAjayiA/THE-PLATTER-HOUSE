@@ -1,6 +1,6 @@
 #  The Platter House — Catering & Food Delivery System
 
-> A luxury catering storefront and real-time merchant operations portal built for high-end finger foods, small chops, party platters, and event catering in Lagos, Nigeria.
+> A luxury catering storefront and real-time admin operations portal built for high-end finger foods, small chops, party platters, and event catering in Lagos, Nigeria.
 
 ---
 
@@ -20,10 +20,10 @@ It provides an elegant, multi-step customer ordering flow (integrated with **Pay
 * **Dual Payment Gateway:**
   * **Paystack (Online):** Card, Bank Transfer, and USSD with auto-confirmation.
   * **Direct Bank Transfer (Manual):** Instant GTBank account copy and WhatsApp proof dispatch.
-* **Live Order Tracking (`#track`):** Real-time 4-stage tracking progress bar (*Confirmed ➔ Preparing ➔ Out for Delivery ➔ Delivered*) synchronized with merchant actions.
+* **Live Order Tracking (`#track`):** Real-time 4-stage tracking progress bar (*Confirmed ➔ Preparing ➔ Out for Delivery ➔ Delivered*) synchronized with admin actions.
 
 ### 🔐 2. Vendor / Admin Suite (`#admin`)
-* **Security PIN Gate:** 4-digit PIN lock (`1234`) featuring automatic verification on the 4th digit, physical laptop keyboard support (`0–9`, Backspace, Esc), subtle loader feedback, and automatic session lock on navigation away.
+* **Security PIN Gate:** 4-digit PIN lock (`0000`) featuring automatic verification on the 4th digit, physical laptop keyboard support (`0–9`, Backspace, Esc), subtle loader feedback, and automatic session lock on navigation away.
 * **Order Lifecycle & State Management:** Filter orders by status (*Pending, Confirmed, Preparing, Out for Delivery, Delivered*), update tracking stages in real-time, and confirm manual GTBank bank transfers.
 * **Order Modification & Safe Deletion:** Edit customer delivery addresses, phone numbers, and dietary notes on the fly, with safety confirmation safeguards on order deletion.
 * **Animated POS Thermal Receipt Dispenser:**

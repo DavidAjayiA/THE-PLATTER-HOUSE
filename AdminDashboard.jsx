@@ -1277,7 +1277,7 @@ export default function AdminDashboard() {
                 <span>LinkedIn / Portfolio Reviewer</span>
               </div>
               <p className="text-[11px] text-[#E4DED2]/85 leading-relaxed">
-                Testing this project? Skip email setup and explore all live merchant features with 1 click:
+                Testing this project? Skip email setup and explore all live admin features with 1 click:
               </p>
               <button
                 type="button"
@@ -1758,7 +1758,7 @@ export default function AdminDashboard() {
                 className="w-8 h-8 object-contain rounded-full bg-white p-0.5 border border-[#A9824F]"
               />
               <div>
-                <p className="text-[10px] text-[#E4DED2]/60 uppercase tracking-wider">Merchant Mode</p>
+                <p className="text-[10px] text-[#E4DED2]/60 uppercase tracking-wider">Admin Mode</p>
                 <p className="text-xs font-semibold text-white">The Platter House HQ</p>
               </div>
             </div>

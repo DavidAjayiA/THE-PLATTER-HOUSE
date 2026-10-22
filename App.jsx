@@ -203,40 +203,57 @@ function DraggablePageSwitcher({ currentHash, navigateTo }) {
             </button>
           </div>
 
-          {/* Quick Page Links */}
+          {/* Quick Page Links (Admin is hidden from public customers unless authenticated or visiting #admin) */}
           <div className="flex flex-wrap gap-1.5">
-            {[
-              { label: "Home", hash: "#" },
-              { label: "Shop", hash: "#shop" },
-              { label: "Collections", hash: "#collections" },
-              { label: "Events", hash: "#events" },
-              { label: "Track", hash: "#track" },
-              { label: "Cart", hash: "#cart" },
-              { label: "Admin ⚙️", hash: "#admin", admin: true },
-            ].map((p) => {
-              const isActive =
-                p.hash === "#"
-                  ? currentHash === "#" || currentHash === ""
-                  : currentHash.startsWith(p.hash);
-              return (
-                <button
-                  key={p.label}
-                  onClick={() => {
-                    navigateTo(p.hash);
-                    setIsOpen(false); // Auto-close on selection on mobile for full view
-                  }}
-                  className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer ${
-                    isActive
-                      ? "bg-[#6E1E2B] text-white font-bold shadow-sm"
-                      : p.admin
-                      ? "bg-[#A9824F]/30 text-white hover:bg-[#A9824F]/50"
-                      : "bg-white/5 hover:bg-white/15 text-[#E4DED2]"
-                  }`}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
+            {(() => {
+              const isStaffAuthed = () => {
+                try {
+                  const until = localStorage.getItem("tph_admin_authed_until");
+                  if (until && Number(until) > Date.now()) return true;
+                  return sessionStorage.getItem("tph_admin_authed") === "true";
+                } catch {
+                  return false;
+                }
+              };
+
+              const pages = [
+                { label: "Home", hash: "#" },
+                { label: "Shop", hash: "#shop" },
+                { label: "Collections", hash: "#collections" },
+                { label: "Events", hash: "#events" },
+                { label: "Track", hash: "#track" },
+                { label: "Cart", hash: "#cart" },
+              ];
+
+              if (isStaffAuthed() || currentHash.toLowerCase().startsWith("#admin")) {
+                pages.push({ label: "Admin ⚙️", hash: "#admin", admin: true });
+              }
+
+              return pages.map((p) => {
+                const isActive =
+                  p.hash === "#"
+                    ? currentHash === "#" || currentHash === ""
+                    : currentHash.startsWith(p.hash);
+                return (
+                  <button
+                    key={p.label}
+                    onClick={() => {
+                      navigateTo(p.hash);
+                      setIsOpen(false); // Auto-close on selection on mobile for full view
+                    }}
+                    className={`px-2.5 py-1 rounded text-xs transition-colors cursor-pointer ${
+                      isActive
+                        ? "bg-[#6E1E2B] text-white font-bold shadow-sm"
+                        : p.admin
+                        ? "bg-[#A9824F]/30 text-white hover:bg-[#A9824F]/50"
+                        : "bg-white/5 hover:bg-white/15 text-[#E4DED2]"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                );
+              });
+            })()}
           </div>
 
           <p className="text-[9px] text-[#888] text-center mt-2 pt-1 border-t border-white/5">

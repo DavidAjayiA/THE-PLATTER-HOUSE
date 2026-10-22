@@ -37,8 +37,11 @@ export const BANK_DETAILS = {
   accountName: "The Platter House Catering Services",
 };
 
-// Vendor Security Access PIN (Change this anytime to your private code)
+// Vendor Security Access PIN (Default baseline code; can also be updated directly in Admin Settings)
 export const ADMIN_PIN = "1234";
+
+// Admin Inactivity Auto-Lock Timeout in Minutes (Default baseline; can be customized in Admin Settings)
+export const ADMIN_INACTIVITY_TIMEOUT_MINUTES = 3;
 
 // Supabase Cloud Database Configuration (Multi-device live sync)
 export const SUPABASE_URL = "https://owrblegiqxyhjxzwjbwa.supabase.co";

@@ -358,9 +358,16 @@ export default function CollectionsPage() {
           style={{ borderTop: "1px solid #3A3632", color: "#8A857D" }}
         >
           <span>© {new Date().getFullYear()} The Platter House. All rights reserved.</span>
-          <div className="flex gap-6">
+          <div className="flex gap-6 items-center">
             <a href="#privacy" className="hover:opacity-70 transition-opacity">Privacy Policy</a>
             <a href="#terms" className="hover:opacity-70 transition-opacity">Terms of Service</a>
+            <a
+              href="#admin"
+              className="hover:opacity-100 transition-opacity text-xs text-[#A9824F]/70 hover:text-[#A9824F]"
+              title="Kitchen & Dispatch Admin"
+            >
+              Staff Portal 🔒
+            </a>
           </div>
         </div>
       </footer>

@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
-import { STORE_NAME, BUSINESS_EMAIL, BUSINESS_WHATSAPP_PHONE, ADMIN_PIN } from "./config.js";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { STORE_NAME, BUSINESS_EMAIL, BUSINESS_WHATSAPP_PHONE, ADMIN_PIN, ADMIN_INACTIVITY_TIMEOUT_MINUTES } from "./config.js";
 import brandLogo from "./IMG/the_platter_house_hq.jpg";
 import { useMenu } from "./MenuContext.jsx";
 import {
@@ -233,21 +233,150 @@ export default function AdminDashboard() {
   const [dispenseKey, setDispenseKey] = useState(0); // Incremented to re-trigger paper roll animation
   const [viewingReceiptImage, setViewingReceiptImage] = useState(null); // When not null, opens Receipt Zoom Lightbox
 
-  // Vendor Security PIN Gate State
+  // ---------------------------------------------------------------------------
+  // OPTION 2: VENDOR SECURITY & ACCESS CONTROL STATE
+  // ---------------------------------------------------------------------------
+  function getStoredAdminPin() {
+    try {
+      const custom = localStorage.getItem("tph_admin_pin");
+      if (custom && custom.trim().length >= 4) return custom.trim();
+    } catch {}
+    return (ADMIN_PIN || "1234").trim();
+  }
+
+  const [activeAdminPin, setActiveAdminPin] = useState(getStoredAdminPin);
+
+  const [rememberDevice, setRememberDevice] = useState(() => {
+    try {
+      return localStorage.getItem("tph_admin_remember_choice") === "true";
+    } catch {
+      return false;
+    }
+  });
+
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     try {
+      const until = localStorage.getItem("tph_admin_authed_until");
+      if (until && Number(until) > Date.now()) {
+        return true;
+      }
       return sessionStorage.getItem("tph_admin_authed") === "true";
     } catch {
       return false;
     }
   });
+
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
+  const [wasInactivityLocked, setWasInactivityLocked] = useState(false);
 
-  // Check PIN automatically whenever candidate length matches expected PIN
+  // Inactivity timeout configuration in minutes (0 = Disabled)
+  const [inactivityMinutes, setInactivityMinutes] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tph_admin_inactivity_minutes");
+      if (saved !== null && !isNaN(Number(saved))) return Number(saved);
+    } catch {}
+    return ADMIN_INACTIVITY_TIMEOUT_MINUTES ?? 3;
+  });
+
+  // Brute Force Guard & Lockout States
+  const [failedAttempts, setFailedAttempts] = useState(() => {
+    try {
+      return Number(sessionStorage.getItem("tph_admin_failed_attempts") || 0);
+    } catch {
+      return 0;
+    }
+  });
+
+  const [lockoutUntil, setLockoutUntil] = useState(() => {
+    try {
+      const val = Number(sessionStorage.getItem("tph_admin_lockout_until") || 0);
+      return val > Date.now() ? val : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [lockoutRemaining, setLockoutRemaining] = useState(0);
+
+  // Change PIN form state inside Admin Settings
+  const [changePinForm, setChangePinForm] = useState({
+    currentPin: "",
+    newPin: "",
+    confirmPin: "",
+  });
+  const [changePinError, setChangePinError] = useState(null);
+  const [changePinSuccess, setChangePinSuccess] = useState(null);
+
+  // Lockout Countdown Timer
+  useEffect(() => {
+    if (!lockoutUntil || lockoutUntil <= Date.now()) {
+      setLockoutRemaining(0);
+      return;
+    }
+    const updateCountdown = () => {
+      const diff = Math.ceil((lockoutUntil - Date.now()) / 1000);
+      if (diff <= 0) {
+        setLockoutRemaining(0);
+        setLockoutUntil(0);
+        setFailedAttempts(0);
+        try {
+          sessionStorage.removeItem("tph_admin_lockout_until");
+          sessionStorage.removeItem("tph_admin_failed_attempts");
+        } catch {}
+      } else {
+        setLockoutRemaining(diff);
+      }
+    };
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    return () => clearInterval(interval);
+  }, [lockoutUntil]);
+
+  // Inactivity Auto-Lock Detection (Monitors mouse, keyboard, touch, scroll)
+  const lastActivityRef = useRef(Date.now());
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    lastActivityRef.current = Date.now();
+
+    const recordUserActivity = () => {
+      lastActivityRef.current = Date.now();
+    };
+
+    const monitoredEvents = ["mousedown", "mousemove", "keydown", "touchstart", "scroll", "click"];
+    monitoredEvents.forEach((evt) => window.addEventListener(evt, recordUserActivity, { passive: true }));
+
+    const autoLockInterval = setInterval(() => {
+      if (inactivityMinutes <= 0) return; // 0 = Disabled
+      const elapsedMs = Date.now() - lastActivityRef.current;
+      const timeoutMs = inactivityMinutes * 60 * 1000;
+
+      if (elapsedMs >= timeoutMs) {
+        setIsAuthenticated(false);
+        setWasInactivityLocked(true);
+        try {
+          sessionStorage.removeItem("tph_admin_authed");
+          localStorage.removeItem("tph_admin_authed_until");
+        } catch {}
+        setPinInput("");
+        setPinError(false);
+        setIsVerifying(false);
+      }
+    }, 4000);
+
+    return () => {
+      monitoredEvents.forEach((evt) => window.removeEventListener(evt, recordUserActivity));
+      clearInterval(autoLockInterval);
+    };
+  }, [isAuthenticated, inactivityMinutes]);
+
+  // Check candidate PIN against current active PIN
   function checkPinCode(candidatePin) {
-    const expectedPin = (ADMIN_PIN || "1234").trim();
+    if (lockoutRemaining > 0) return;
+
+    const expectedPin = activeAdminPin;
     setIsVerifying(true);
     setPinError(false);
 
@@ -257,21 +386,48 @@ export default function AdminDashboard() {
         setIsVerifying(false);
         setPinInput("");
         setPinError(false);
+        setWasInactivityLocked(false);
+        setFailedAttempts(0);
         try {
           sessionStorage.setItem("tph_admin_authed", "true");
+          sessionStorage.removeItem("tph_admin_failed_attempts");
+          sessionStorage.removeItem("tph_admin_lockout_until");
+
+          if (rememberDevice) {
+            localStorage.setItem("tph_admin_authed_until", String(Date.now() + 24 * 60 * 60 * 1000));
+            localStorage.setItem("tph_admin_remember_choice", "true");
+          } else {
+            localStorage.removeItem("tph_admin_authed_until");
+            localStorage.setItem("tph_admin_remember_choice", "false");
+          }
         } catch {}
         showToast("Welcome back! Vendor portal unlocked successfully.");
       } else {
         setIsVerifying(false);
         setPinError(true);
         setPinInput("");
+
+        const nextAttempts = failedAttempts + 1;
+        setFailedAttempts(nextAttempts);
+        try {
+          sessionStorage.setItem("tph_admin_failed_attempts", String(nextAttempts));
+        } catch {}
+
+        if (nextAttempts >= 5) {
+          const lockEnd = Date.now() + 60000;
+          setLockoutUntil(lockEnd);
+          setLockoutRemaining(60);
+          try {
+            sessionStorage.setItem("tph_admin_lockout_until", String(lockEnd));
+          } catch {}
+        }
       }
-    }, 550); // Subtle loading circle feedback before entering
+    }, 550);
   }
 
   function handleDigitPress(digit) {
-    if (isVerifying) return;
-    const expectedLength = (ADMIN_PIN || "1234").trim().length || 4;
+    if (isVerifying || lockoutRemaining > 0) return;
+    const expectedLength = activeAdminPin.length || 4;
     if (pinInput.length >= expectedLength) return;
 
     const nextPin = pinInput + digit;
@@ -284,21 +440,23 @@ export default function AdminDashboard() {
   }
 
   function handleBackspace() {
-    if (isVerifying) return;
+    if (isVerifying || lockoutRemaining > 0) return;
     setPinInput((prev) => prev.slice(0, -1));
     setPinError(false);
   }
 
   function handleClearPin() {
-    if (isVerifying) return;
+    if (isVerifying || lockoutRemaining > 0) return;
     setPinInput("");
     setPinError(false);
   }
 
   function handleLockPortal() {
     setIsAuthenticated(false);
+    setWasInactivityLocked(false);
     try {
       sessionStorage.removeItem("tph_admin_authed");
+      localStorage.removeItem("tph_admin_authed_until");
     } catch {}
     setPinInput("");
     setPinError(false);
@@ -306,12 +464,58 @@ export default function AdminDashboard() {
     showToast("Logged out of vendor portal");
   }
 
+  // Handle In-Dashboard PIN Change Form Submit
+  function handleChangePinSubmit(e) {
+    e.preventDefault();
+    setChangePinError(null);
+    setChangePinSuccess(null);
+
+    const { currentPin, newPin, confirmPin } = changePinForm;
+
+    if (currentPin.trim() !== activeAdminPin) {
+      setChangePinError("Current PIN is incorrect.");
+      return;
+    }
+
+    if (!/^\d{4}$/.test(newPin.trim())) {
+      setChangePinError("New PIN must be exactly 4 numeric digits (e.g. 5829).");
+      return;
+    }
+
+    if (newPin.trim() !== confirmPin.trim()) {
+      setChangePinError("New PIN and Confirm PIN do not match.");
+      return;
+    }
+
+    const finalPin = newPin.trim();
+    try {
+      localStorage.setItem("tph_admin_pin", finalPin);
+    } catch {}
+    setActiveAdminPin(finalPin);
+    setChangePinForm({ currentPin: "", newPin: "", confirmPin: "" });
+    setChangePinSuccess(`Security PIN updated successfully! Your new PIN is ${finalPin}`);
+    showToast("Master PIN updated successfully!");
+  }
+
+  // Reset PIN back to config.js default (1234)
+  function handleResetPinToDefault() {
+    try {
+      localStorage.removeItem("tph_admin_pin");
+    } catch {}
+    const defaultPin = (ADMIN_PIN || "1234").trim();
+    setActiveAdminPin(defaultPin);
+    setChangePinForm({ currentPin: "", newPin: "", confirmPin: "" });
+    setChangePinError(null);
+    setChangePinSuccess("Security PIN restored to factory default (1234).");
+    showToast("Security PIN reset to default (1234)");
+  }
+
   // Global Keyboard Listener for Laptop / Desktop Physical Keyboard
   useEffect(() => {
     if (isAuthenticated) return;
 
     function handleGlobalKeyDown(e) {
-      if (isVerifying) return;
+      if (isVerifying || lockoutRemaining > 0) return;
 
       // Listen for numbers 0-9 (number row and numpad)
       if (e.key >= "0" && e.key <= "9") {
@@ -328,13 +532,16 @@ export default function AdminDashboard() {
 
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [isAuthenticated, isVerifying, pinInput]);
+  }, [isAuthenticated, isVerifying, lockoutRemaining, pinInput, activeAdminPin]);
 
-  // Auto-lock when vendor leaves the dashboard (e.g. checking live shop, tracking, etc.)
+  // Clean session when leaving unless 24h remember device was selected
   useEffect(() => {
     return () => {
       try {
-        sessionStorage.removeItem("tph_admin_authed");
+        const until = localStorage.getItem("tph_admin_authed_until");
+        if (!until || Number(until) <= Date.now()) {
+          sessionStorage.removeItem("tph_admin_authed");
+        }
       } catch {}
     };
   }, []);
@@ -789,7 +996,7 @@ export default function AdminDashboard() {
   // RENDER: VENDOR SECURITY PIN GATE
   // ---------------------------------------------------------------------------
   if (!isAuthenticated) {
-    const expectedLength = (ADMIN_PIN || "1234").trim().length || 4;
+    const expectedLength = (activeAdminPin || "1234").trim().length || 4;
 
     return (
       <div
@@ -830,9 +1037,26 @@ export default function AdminDashboard() {
           <h1 className="font-display text-2xl font-semibold text-white mb-1">
             {STORE_NAME}
           </h1>
-          <p className="text-xs text-[#E4DED2]/70 mb-5">
-            Enter 4-digit security PIN to unlock the dashboard.
-          </p>
+
+          {/* Inactivity Auto-Lock Alert */}
+          {wasInactivityLocked && (
+            <div className="my-3 p-2.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs flex items-center justify-center gap-2 animate-pulse">
+              <span>⏱️</span>
+              <span>Screen locked after {inactivityMinutes} minutes of inactivity</span>
+            </div>
+          )}
+
+          {/* Brute-Force Lockout Alert */}
+          {lockoutRemaining > 0 ? (
+            <div className="my-3 p-3 rounded bg-red-900/60 border border-red-500/60 text-red-200 text-xs font-semibold flex items-center justify-center gap-2">
+              <span>🔒</span>
+              <span>Keypad locked: Try again in {lockoutRemaining}s</span>
+            </div>
+          ) : (
+            <p className="text-xs text-[#E4DED2]/70 mb-4">
+              Enter 4-digit security PIN to unlock the dashboard.
+            </p>
+          )}
 
           {/* Hidden input to capture physical keyboard focus */}
           <input
@@ -840,6 +1064,7 @@ export default function AdminDashboard() {
             maxLength={expectedLength}
             value={pinInput}
             onChange={(e) => {
+              if (lockoutRemaining > 0) return;
               const val = e.target.value.replace(/[^0-9]/g, "");
               if (val.length <= expectedLength) {
                 setPinInput(val);
@@ -849,13 +1074,13 @@ export default function AdminDashboard() {
                 }
               }
             }}
-            disabled={isVerifying}
+            disabled={isVerifying || lockoutRemaining > 0}
             className="sr-only"
             autoFocus
           />
 
-          {/* 4 Interactive PIN Dots */}
-          <div className="flex justify-center items-center gap-3.5 my-4">
+          {/* Interactive PIN Dots */}
+          <div className="flex justify-center items-center gap-3.5 my-3">
             {Array.from({ length: expectedLength }).map((_, idx) => {
               const isFilled = pinInput.length > idx;
               return (
@@ -874,7 +1099,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Status Message / Loading Circle Feedback */}
-          <div className="min-h-[28px] flex items-center justify-center">
+          <div className="min-h-[26px] flex items-center justify-center">
             {isVerifying ? (
               <div className="flex items-center justify-center gap-2 text-xs text-[#A9824F] font-medium">
                 <svg className="animate-spin h-4 w-4 text-[#A9824F]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -883,58 +1108,80 @@ export default function AdminDashboard() {
                 </svg>
                 <span>Verifying PIN...</span>
               </div>
+            ) : lockoutRemaining > 0 ? (
+              <p className="text-xs text-red-400 font-medium">
+                Attempts exceeded. Please wait {lockoutRemaining}s.
+              </p>
             ) : pinError ? (
               <p className="text-xs text-red-400 font-medium">
                 Incorrect PIN. Please try again.
               </p>
             ) : (
-              <p className="text-[11px] text-[#E4DED2]/40">
+              <p className="text-[11px] text-[#E4DED2]/50">
                 {pinInput.length === 0 ? "Type or tap your 4 digits" : `${pinInput.length} of ${expectedLength} entered`}
               </p>
             )}
           </div>
 
-          {/* Touch Numpad (Clean digits + Clear + Backspace — NO OK BUTTON) */}
-          <div className="grid grid-cols-3 gap-2 mt-5 pt-5 border-t border-white/10">
+          {/* Remember this Device (24 Hours) Checkbox */}
+          <label className="flex items-center justify-center gap-2 mt-2 mb-2 text-xs text-[#E4DED2]/80 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={rememberDevice}
+              disabled={isVerifying || lockoutRemaining > 0}
+              onChange={(e) => {
+                const val = e.target.checked;
+                setRememberDevice(val);
+                try {
+                  localStorage.setItem("tph_admin_remember_choice", val ? "true" : "false");
+                } catch {}
+              }}
+              className="w-3.5 h-3.5 rounded accent-[#A9824F] cursor-pointer"
+            />
+            <span>Remember this device for 24 hours</span>
+          </label>
+
+          {/* Touch Numpad */}
+          <div className="grid grid-cols-3 gap-2 mt-3 pt-4 border-t border-white/10">
             {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit) => (
               <button
                 key={digit}
                 type="button"
-                disabled={isVerifying}
+                disabled={isVerifying || lockoutRemaining > 0}
                 onClick={() => handleDigitPress(digit)}
-                className="py-3 text-sm font-mono font-semibold rounded bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+                className="py-3 text-sm font-mono font-semibold rounded bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
               >
                 {digit}
               </button>
             ))}
             <button
               type="button"
-              disabled={isVerifying || pinInput.length === 0}
+              disabled={isVerifying || lockoutRemaining > 0 || pinInput.length === 0}
               onClick={handleClearPin}
-              className="py-3 text-xs font-mono rounded bg-white/5 text-[#E4DED2]/60 hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-30"
+              className="py-3 text-xs font-mono rounded bg-white/5 text-[#E4DED2]/60 hover:bg-white/10 active:scale-95 transition-all cursor-pointer disabled:opacity-20 disabled:cursor-not-allowed"
             >
               Clear
             </button>
             <button
               type="button"
-              disabled={isVerifying}
+              disabled={isVerifying || lockoutRemaining > 0}
               onClick={() => handleDigitPress("0")}
-              className="py-3 text-sm font-mono font-semibold rounded bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-50"
+              className="py-3 text-sm font-mono font-semibold rounded bg-white/10 text-white hover:bg-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
             >
               0
             </button>
             <button
               type="button"
-              disabled={isVerifying || pinInput.length === 0}
+              disabled={isVerifying || lockoutRemaining > 0 || pinInput.length === 0}
               onClick={handleBackspace}
-              className="py-3 text-sm font-mono rounded bg-white/5 text-[#E4DED2]/80 hover:bg-white/10 active:scale-95 transition-all cursor-pointer flex items-center justify-center disabled:opacity-30"
+              className="py-3 text-sm font-mono rounded bg-white/5 text-[#E4DED2]/80 hover:bg-white/10 active:scale-95 transition-all cursor-pointer flex items-center justify-center disabled:opacity-20 disabled:cursor-not-allowed"
               aria-label="Delete"
             >
               ⌫
             </button>
           </div>
 
-          <div className="mt-6 pt-4 text-xs text-[#E4DED2]/50">
+          <div className="mt-5 pt-3 text-xs text-[#E4DED2]/50">
             <a href="#" className="hover:text-white underline">
               ← Return to Public Storefront
             </a>
@@ -2037,14 +2284,215 @@ export default function AdminDashboard() {
             </div>
           </div>
 
-          <div className="bg-[#FBF9F5] p-6 rounded-sm border border-[#E4DED2] shadow-sm space-y-3">
-            <h3 className="font-display text-base font-bold text-[#201D1B]">Vendor Security</h3>
-            <p className="text-xs text-[#4A4642]">
-              Portal Master PIN is currently set to: <strong className="font-mono bg-white px-2 py-0.5 border rounded">{ADMIN_PIN || "1234"}</strong>
-            </p>
-            <p className="text-[11px] text-[#888]">
-              To change your PIN permanently, update the <code className="bg-white px-1 py-0.5 border">ADMIN_PIN</code> in <code className="bg-white px-1 py-0.5 border">config.js</code>.
-            </p>
+          {/* VENDOR SECURITY & ACCESS CONTROL PANEL */}
+          <div className="bg-[#FBF9F5] p-6 rounded-sm border border-[#E4DED2] shadow-sm space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E4DED2] pb-3">
+              <div>
+                <h3 className="font-display text-base font-bold text-[#201D1B] flex items-center gap-2">
+                  <span>🔒</span> Vendor Security & Master PIN
+                </h3>
+                <p className="text-xs text-[#4A4642] mt-0.5">
+                  Manage your portal PIN, inactivity auto-lock timeout, and trusted devices
+                </p>
+              </div>
+              <span
+                className={`text-[11px] font-semibold px-2.5 py-1 rounded-full ${
+                  activeAdminPin === (ADMIN_PIN || "1234").trim()
+                    ? "bg-[#A9824F]/15 text-[#6E1E2B] border border-[#A9824F]/30"
+                    : "bg-[#1B5E20]/15 text-[#1B5E20] border border-[#4CAF50]/30"
+                }`}
+              >
+                {activeAdminPin === (ADMIN_PIN || "1234").trim() ? "Default PIN Active" : "Custom PIN Active"}
+              </span>
+            </div>
+
+            {/* Current PIN & Change PIN Form */}
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-white border border-[#E4DED2] rounded-sm text-xs">
+                <div>
+                  <span className="text-[#888] block text-[11px]">Current Security PIN</span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="font-mono text-base font-bold tracking-widest text-[#201D1B]">
+                      ••••
+                    </span>
+                    <span className="text-[10px] text-[#A9824F] bg-[#A9824F]/10 px-2 py-0.5 rounded">
+                      {activeAdminPin.length} digits configured
+                    </span>
+                  </div>
+                </div>
+                {activeAdminPin !== (ADMIN_PIN || "1234").trim() && (
+                  <button
+                    type="button"
+                    onClick={handleResetPinToDefault}
+                    className="px-3 py-1.5 text-xs text-[#6E1E2B] hover:bg-[#6E1E2B]/5 border border-[#6E1E2B]/30 rounded cursor-pointer transition-colors"
+                  >
+                    Reset to Default (1234)
+                  </button>
+                )}
+              </div>
+
+              {/* Form Feedback */}
+              {changePinError && (
+                <div className="p-3 rounded bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+                  <span>✕</span>
+                  <span>{changePinError}</span>
+                </div>
+              )}
+              {changePinSuccess && (
+                <div className="p-3 rounded bg-green-50 border border-green-200 text-green-700 text-xs flex items-center gap-2">
+                  <span>✓</span>
+                  <span>{changePinSuccess}</span>
+                </div>
+              )}
+
+              {/* Change PIN Form */}
+              <form onSubmit={handleChangePinSubmit} className="space-y-3 bg-white p-4 border border-[#E4DED2] rounded-sm">
+                <h4 className="text-xs font-semibold uppercase tracking-wider text-[#6E1E2B]">
+                  Change 4-Digit Security PIN
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#4A4642] mb-1">
+                      Current PIN <span className="text-[#6E1E2B]">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={4}
+                      required
+                      placeholder="e.g. 1234"
+                      value={changePinForm.currentPin}
+                      onChange={(e) =>
+                        setChangePinForm({
+                          ...changePinForm,
+                          currentPin: e.target.value.replace(/[^0-9]/g, ""),
+                        })
+                      }
+                      className="w-full px-3 py-2 text-xs font-mono bg-[#FBF9F5] border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B] text-center tracking-widest"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#4A4642] mb-1">
+                      New 4-Digit PIN <span className="text-[#6E1E2B]">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={4}
+                      required
+                      placeholder="e.g. 5829"
+                      value={changePinForm.newPin}
+                      onChange={(e) =>
+                        setChangePinForm({
+                          ...changePinForm,
+                          newPin: e.target.value.replace(/[^0-9]/g, ""),
+                        })
+                      }
+                      className="w-full px-3 py-2 text-xs font-mono bg-[#FBF9F5] border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B] text-center tracking-widest"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-[#4A4642] mb-1">
+                      Confirm New PIN <span className="text-[#6E1E2B]">*</span>
+                    </label>
+                    <input
+                      type="password"
+                      maxLength={4}
+                      required
+                      placeholder="e.g. 5829"
+                      value={changePinForm.confirmPin}
+                      onChange={(e) =>
+                        setChangePinForm({
+                          ...changePinForm,
+                          confirmPin: e.target.value.replace(/[^0-9]/g, ""),
+                        })
+                      }
+                      className="w-full px-3 py-2 text-xs font-mono bg-[#FBF9F5] border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B] text-center tracking-widest"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end pt-2">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-sm text-xs font-semibold text-white bg-[#6E1E2B] hover:opacity-90 transition-opacity cursor-pointer shadow-sm"
+                  >
+                    Save New PIN
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Inactivity Auto-Lock Setting */}
+            <div className="pt-4 border-t border-[#E4DED2] space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-xs font-semibold text-[#201D1B] flex items-center gap-1.5">
+                    <span>⏱️</span> Auto-Lock on Inactivity
+                  </h4>
+                  <p className="text-[11px] text-[#4A4642] mt-0.5">
+                    Automatically locks the dashboard when no mouse, typing, or touch activity is detected.
+                  </p>
+                </div>
+                <select
+                  value={inactivityMinutes}
+                  onChange={(e) => {
+                    const mins = Number(e.target.value);
+                    setInactivityMinutes(mins);
+                    try {
+                      localStorage.setItem("tph_admin_inactivity_minutes", String(mins));
+                    } catch {}
+                    showToast(
+                      mins === 0
+                        ? "Inactivity auto-lock disabled"
+                        : `Auto-lock set to ${mins} minutes`
+                    );
+                  }}
+                  className="px-3 py-2 text-xs bg-white border border-[#E4DED2] rounded-sm focus:outline-none focus:border-[#6E1E2B] text-[#201D1B] font-medium cursor-pointer"
+                >
+                  <option value={2}>2 minutes (Strict / Countertop POS)</option>
+                  <option value={3}>3 minutes (Recommended Default)</option>
+                  <option value={5}>5 minutes</option>
+                  <option value={10}>10 minutes</option>
+                  <option value={0}>Disabled / Never (Back office)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Trusted Device Session & Quick Lock */}
+            <div className="pt-4 border-t border-[#E4DED2] flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="text-[11px] text-[#4A4642]">
+                <span className="font-semibold text-[#201D1B]">Trusted Device Session:</span>{" "}
+                {rememberDevice ? (
+                  <span className="text-[#1B5E20] font-medium">Active (24-Hour Keep Unlocked)</span>
+                ) : (
+                  <span className="text-[#888]">Standard Session (Locks on window close)</span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {rememberDevice && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRememberDevice(false);
+                      try {
+                        localStorage.removeItem("tph_admin_authed_until");
+                        localStorage.setItem("tph_admin_remember_choice", "false");
+                      } catch {}
+                      showToast("Revoked 24h trusted session on this device");
+                    }}
+                    className="px-3 py-1.5 rounded-sm border border-[#E4DED2] bg-white text-[#6E1E2B] hover:bg-[#6E1E2B]/5 text-xs transition-colors cursor-pointer"
+                  >
+                    Revoke 24h Session
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleLockPortal}
+                  className="px-3 py-1.5 rounded-sm bg-[#201D1B] hover:bg-[#201D1B]/80 text-[#F6F2EB] text-xs font-semibold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                >
+                  <span>🔒</span> Lock Portal Now
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

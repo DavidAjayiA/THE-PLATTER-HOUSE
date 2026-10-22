@@ -703,11 +703,19 @@ export default function AdminDashboard() {
     showToast("Security PIN reset to default (1234)");
   }
 
-  // Global Keyboard Listener for Laptop / Desktop Physical Keyboard
+  // Global Keyboard Listener for Laptop / Desktop Physical Keyboard (Only for the PIN Pad)
   useEffect(() => {
-    if (isAuthenticated) return;
+    // Only listen for PIN keypad keystrokes when device is certified AND portal is locked
+    if (!certifiedStaffUser || isAuthenticated) return;
 
     function handleGlobalKeyDown(e) {
+      // If user is currently typing in an active text input/textarea (like email or OTP), do not hijack keys!
+      const targetTag = e.target?.tagName?.toLowerCase();
+      const isHiddenPinInput = e.target?.classList?.contains("sr-only");
+      if ((targetTag === "input" || targetTag === "textarea") && !isHiddenPinInput) {
+        return;
+      }
+
       if (isVerifying || lockoutRemaining > 0) return;
 
       // Listen for numbers 0-9 (number row and numpad)
@@ -725,7 +733,7 @@ export default function AdminDashboard() {
 
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
-  }, [isAuthenticated, isVerifying, lockoutRemaining, pinInput, activeAdminPin]);
+  }, [certifiedStaffUser, isAuthenticated, isVerifying, lockoutRemaining, pinInput, activeAdminPin]);
 
   // Clean session when leaving unless 24h remember device was selected
   useEffect(() => {
